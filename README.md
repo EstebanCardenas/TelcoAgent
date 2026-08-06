@@ -18,8 +18,8 @@ completan una pieza y las pruebas de esa semana pasan de rojo a verde.
 
 | Nombre completo | Correo |
 | :--- | :--- |
-|  |  |
-|  |  |
+| Jónatan Hernández | je.hernandezr@uniandes.edu.co |
+| Nicolás Cárdenas | ne.cardenas@uniandes.edu.co |
 
 ---
 
