@@ -8,7 +8,7 @@ Implementen `load_mcp_tools()` conectándose a su servidor. `load_mcp_tools_safe
 ya está lista: envuelve la anterior para que el CLI no se caiga si el servidor
 todavía no existe o no arranca (degrada a solo herramientas locales).
 """
-
+from mcp_server.server import mcp
 
 async def load_mcp_tools() -> list:
     """Descubre y devuelve las herramientas expuestas por su servidor MCP.
@@ -16,9 +16,7 @@ async def load_mcp_tools() -> list:
     Debe arrancar el servidor y listar sus tools, sin depender de que la API
     empresarial esté levantada (semana 2: al menos 1 herramienta).
     """
-    raise NotImplementedError(
-        "Semana 2: conecte el cliente MCP a su servidor siguiendo el laboratorio 8."
-    )
+    return await mcp.list_tools()
 
 
 async def load_mcp_tools_safe() -> tuple[list, str | None]:
