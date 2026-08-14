@@ -77,3 +77,6 @@ def get_local_tools() -> list:
         consultar_politicas_institucionales,
         consultar_casos_resueltos,
     ]
+
+def get_local_tools_by_name() -> dict:
+    return {tool.name: tool for tool in get_local_tools()}

@@ -15,6 +15,14 @@ de negocio (lean el enunciado). La semana 2 pide que el servidor exponga al
 menos una herramienta propia.
 """
 
+import sys
+from pathlib import Path
+
+# Asegurar que el directorio raíz del proyecto esté en sys.path al ejecutarse como script
+_ROOT_DIR = str(Path(__file__).resolve().parent.parent)
+if _ROOT_DIR not in sys.path:
+    sys.path.insert(0, _ROOT_DIR)
+
 import json
 import requests
 from typing import Annotated, Literal
