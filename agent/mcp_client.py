@@ -8,23 +8,30 @@ Implementen `load_mcp_tools()` conectándose a su servidor. `load_mcp_tools_safe
 ya está lista: envuelve la anterior para que el CLI no se caiga si el servidor
 todavía no existe o no arranca (degrada a solo herramientas locales).
 """
-from mcp_server.server import mcp
+
+import sys
+from pathlib import Path
+from langchain_mcp_adapters.client import MultiServerMCPClient
+
+SERVER_PATH = str((Path(__file__).resolve().parent.parent / "mcp_server" / "server.py").resolve())
+
+config = {
+    "agent-actions": {
+        "command": sys.executable,
+        "args": [SERVER_PATH],
+        "transport": "stdio",
+    }
+}
+client = MultiServerMCPClient(config)
+
 
 async def load_mcp_tools() -> list:
-    """Descubre y devuelve las herramientas expuestas por su servidor MCP.
-
-    Debe arrancar el servidor y listar sus tools, sin depender de que la API
-    empresarial esté levantada (semana 2: al menos 1 herramienta).
-    """
-    return await mcp.list_tools()
+    """Descubre y devuelve las herramientas expuestas por su servidor MCP."""
+    return await client.get_tools()
 
 
 async def load_mcp_tools_safe() -> tuple[list, str | None]:
-    """Variante tolerante para el CLI: retorna (tools, error).
-
-    Si el cliente MCP todavía no está implementado o el servidor no arranca,
-    retorna ([], mensaje) y el CLI sigue funcionando solo con las tools locales.
-    """
+    """Variante tolerante para el CLI: retorna (tools, error)."""
     try:
         return await load_mcp_tools(), None
     except Exception as exc:  # noqa: BLE001 — cualquier fallo degrada, no rompe
