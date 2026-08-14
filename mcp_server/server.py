@@ -15,50 +15,85 @@ de negocio (lean el enunciado). La semana 2 pide que el servidor exponga al
 menos una herramienta propia.
 """
 
-from mcp.server.fastmcp import FastMCP
-from typing import Annotated
+import json
+import requests
+from typing import Annotated, Literal
 from pydantic import Field
+from mcp.server.fastmcp import FastMCP
 
 from cli.config import get_settings
-from mcp_server.rag_client import RagClient
 
 mcp = FastMCP("acciones-del-agente")
-client = RagClient(get_settings())
 
 
-@mcp.tool
-def public_knowledge_base_login() -> str:
-    """
-    Hace login en el API para consultar el RAG de la base de conocimiento
-    pública de telecom. Este llamado debe hacerse antes de hacer cualquier
-    interacción con el API del RAG.
-    """
-    try:
-        client.login()
-        return 'Login exitoso'
-    except Exception as e:
-        return f'Login fallido, error: {e}'
-
-
-@mcp.tool
-def query_public_knowledge_base(
-    query: Annotated[str, Field(description="Query a realizar sobre la base de conocimiento público")]
+@mcp.tool()
+def crear_ticket_escalamiento(
+    contacto_id: Annotated[str, Field(description="Identificador del contacto origen (ej. CTO-001)")],
+    categoria: Annotated[str, Field(description="Categoría del problema a escalar: tecnica, facturacion, retencion, etc.")],
+    prioridad: Annotated[Literal["baja", "media", "alta", "critica"], Field(description="Nivel de prioridad del ticket")],
+    area_destino: Annotated[
+        Literal["soporte_tecnico_n1", "soporte_tecnico_n2", "facturacion", "retencion", "supervision"],
+        Field(description="Área humana especializada de destino"),
+    ],
+    resumen: Annotated[str, Field(description="Resumen y justificación del escalamiento con datos relevantes")],
+    cliente_id: Annotated[str | None, Field(description="Id del cliente si está identificado")] = None,
 ) -> str:
-    """
-    Realiza una consulta sobre el RAG para obtener información
-    de conocimiento público sobre la empresa.
-    """
+    """Crea un ticket de escalamiento en la API empresarial de Telco Andina para transferir un caso a un área especializada."""
+    settings = get_settings()
+    url = f"{settings.api_base_url.rstrip('/')}/telecom/tickets"
+    payload = {
+        "contacto_id": contacto_id,
+        "categoria": categoria,
+        "prioridad": prioridad,
+        "area_destino": area_destino,
+        "resumen": resumen,
+        "cliente_id": cliente_id,
+    }
     try:
-        response = client.query_knowledge_base(query)
-        return response
+        res = requests.post(url, json=payload, timeout=10)
+        if res.status_code in (200, 201):
+            return json.dumps(res.json(), ensure_ascii=False)
+        return f"Error al crear ticket: status {res.status_code} - {res.text}"
     except Exception as e:
-        return f'Error al consultar la base de conocimiento: {e}'
+        return f"Error de conexión al crear ticket en API empresarial: {e}"
+
+
+@mcp.tool()
+def registrar_telemetria(
+    contacto_id: Annotated[str, Field(description="Identificador único del contacto atendido")],
+    categoria: Annotated[str, Field(description="Categoría principal: tecnica | facturacion | retencion | consulta | otro")],
+    tono_detectado: Annotated[Literal["frustrado", "urgente", "agresivo", "neutro", "cordial"], Field(description="Tono emocional detectado")],
+    urgencia: Annotated[Literal["baja", "media", "alta"], Field(description="Nivel de urgencia del caso")],
+    decision: Annotated[Literal["resolver", "escalar"], Field(description="Decisión tomada por el agente")],
+    categoria_secundaria: Annotated[str | None, Field(description="Segunda categoría si el mensaje es mixto")] = None,
+    riesgo_churn: Annotated[bool | None, Field(description="True si hay amenaza de cancelación")] = None,
+    detalle: Annotated[str | None, Field(description="Detalle o justificación de la decisión")] = None,
+) -> str:
+    """Registra la auditoría y telemetría obligatoria en la API empresarial antes de emitir una respuesta al cliente."""
+    settings = get_settings()
+    url = f"{settings.api_base_url.rstrip('/')}/telecom/telemetria"
+    payload = {
+        "contacto_id": contacto_id,
+        "categoria": categoria,
+        "tono_detectado": tono_detectado,
+        "urgencia": urgencia,
+        "decision": decision,
+        "categoria_secundaria": categoria_secundaria,
+        "riesgo_churn": riesgo_churn,
+        "detalle": detalle,
+    }
+    try:
+        res = requests.post(url, json=payload, timeout=10)
+        if res.status_code in (200, 201):
+            return json.dumps(res.json(), ensure_ascii=False)
+        return f"Error al registrar telemetría: status {res.status_code} - {res.text}"
+    except Exception as e:
+        return f"Error de conexión al registrar telemetría en API empresarial: {e}"
+
 
 @mcp.tool()
 def ping() -> str:
-    """
-    Herramienta para verificar que el servidor está vivo.
-    """
+    """Herramienta de diagnóstico para verificar que el servidor MCP responde."""
     return "pong"
 
 
