@@ -228,7 +228,7 @@ Toda herramienta devuelve un JSON con una de dos formas:
 
 **El servicio de conocimiento no responde.** El cliente de RAG tipifica los modos de falla con códigos estables (`rate_limit`, `credenciales_invalidas`, `sin_conexion`, `pregunta_rechazada`, `coleccion_no_existe`, `respuesta_invalida`). Un `401` renueva el token y reintenta una vez. Un `429` lee el header `Retry-After`: si la espera es de 15 segundos o menos, espera y reintenta; si es mayor, devuelve el error para que el agente decida sin bloquear el turno.
 
-Corrida con el RAG apuntando a un puerto muerto:
+Ejecución con el RAG apuntando a un puerto muerto:
 
 ```
   🔧 consultar_base_conocimiento_publica({"query": "horario de la tienda de Chapinero"})

@@ -17,9 +17,9 @@ Toda herramienta devuelve un JSON en texto con una de estas dos formas:
     {"estado": "ok",    ...datos...}
     {"estado": "error", "codigo": "...", "mensaje": "...", "accion_sugerida": "..."}
 
-`accion_sugerida` es deliberado: ante una falla el LLM recibe una instrucción de
-qué hacer (degradar, reintentar o escalar) en vez de un stacktrace, y así no
-inventa el dato que no pudo consultar.
+`accion_sugerida` le dice al LLM qué hacer ante una falla: degradar, reintentar o
+escalar. Con un stacktrace en su lugar, termina inventando el dato que no pudo
+consultar.
 
 Cada herramienta declara su `args_schema` con `Field(description=...)` enumerando
 los valores aceptados: esa descripción es la guía que lee el LLM al elegirlos.
@@ -251,7 +251,7 @@ def cliente_existe(numero_identificacion: str) -> bool:
 
     La API solo responde `{"existe": true|false}`, sin revelar dato alguno. El
     `cliente_id` sale del contacto, y el perfil completo exige autenticarse.
-    La usa el nodo de recepción, no el modelo: por eso no es una herramienta.
+    La invoca el nodo de recepción, y por eso es una función normal.
     """
     cedula = (numero_identificacion or "").strip()
     if not cedula:
