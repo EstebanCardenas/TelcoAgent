@@ -26,6 +26,7 @@ load_dotenv()
 class Settings:
     ollama_model: str
     ollama_base_url: str
+    ollama_num_ctx: int
     api_base_url: str
     caso_negocio: str
     grupo: str
@@ -43,6 +44,7 @@ def get_settings() -> Settings:
     return Settings(
         ollama_model=os.getenv("OLLAMA_MODEL", "qwen2.5:3b"),
         ollama_base_url=os.getenv("OLLAMA_BASE_URL", "http://localhost:11434"),
+        ollama_num_ctx=int(os.getenv("OLLAMA_NUM_CTX", "8192")),
         api_base_url=os.getenv("API_BASE_URL", "http://localhost:8080"),
         caso_negocio=os.getenv("CASO_NEGOCIO", "telecom"),
         grupo=os.getenv("GRUPO", "00"),
