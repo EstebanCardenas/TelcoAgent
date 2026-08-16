@@ -16,8 +16,8 @@ class AgentState(TypedDict, total=False):
 
     Que los campos de recepción, análisis y decisión vivan aquí es lo que hace
     coherente el expediente: el nodo `acciones` registra la telemetría y el ticket
-    con estos valores, no con lo que el modelo repita después, así que la
-    auditoría no puede contradecir la respuesta que recibe el cliente.
+    leyendo estos valores, así que la auditoría siempre coincide con la respuesta
+    que recibe el cliente.
 
     `total=False`: todos los campos son opcionales al invocar. El grafo arranca
     con solo `messages` y cada nodo va llenando lo suyo.

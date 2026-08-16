@@ -20,10 +20,10 @@ Forma del grafo:
                                           v
                                       decision -> acciones -> respuesta -> END
 
-Lo que el caso exige por auditoría lo garantiza el código, no la obediencia del
-modelo: `acciones` corre siempre entre la decisión y la respuesta, y registra los
-valores que están en el estado. Al modelo le quedan las decisiones de criterio,
-que es lo que el diagrama marca como agéntico.
+El código garantiza lo que el caso exige por auditoría: `acciones` corre siempre
+entre la decisión y la respuesta, y registra los valores que están en el estado.
+Al modelo le quedan las decisiones de criterio, que es lo que el diagrama marca
+como agéntico.
 """
 
 import json
@@ -129,7 +129,10 @@ estas siete secciones, cada una con su título:
 7. Recomendaciones y preguntas pendientes
 
 Usa solo información que aparezca arriba. Si un dato no aparece, NO lo inventes: dile al cliente que
-lo vas a verificar y anótalo en la sección 7 como pendiente."""
+lo vas a verificar y anótalo en la sección 7 como pendiente.
+
+El expediente termina en la sección 7. No escribas nada después: ni cierres, ni resúmenes de lo que
+acabas de redactar, ni comentarios sobre estas instrucciones."""
 
 
 def _texto_del_cliente(messages: list) -> str:
@@ -200,7 +203,7 @@ def _uno_de(valor, permitidos: tuple, por_defecto: str) -> str:
     return next((p for p in permitidos if p in texto), por_defecto)
 
 
-# Traza para la persona que mira el CLI, no turnos del diálogo.
+# Traza para la persona que mira el CLI. El modelo nunca las ve.
 ANOTACIONES = ("[análisis]", "[auditoría]")
 
 
@@ -208,7 +211,7 @@ def _conversacion(messages: list) -> list:
     """La conversación sin mensajes de sistema ni anotaciones.
 
     Si el último mensaje es una anotación del asistente, el modelo la lee como
-    una frase suya a medio escribir y la continúa, en vez de pedir la herramienta.
+    una frase suya a medio escribir y la continúa en texto plano.
     """
     return [
         m
