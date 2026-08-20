@@ -14,6 +14,7 @@ from importlib.metadata import PackageNotFoundError, version as pkg_version
 
 import click
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
+import uuid
 
 from cli import ui
 from cli.config import get_settings
@@ -153,8 +154,10 @@ async def _chat(usar_mcp: bool):
         turno += 1
         # Etiqueta cada turno en LangSmith (laboratorio 9): filtrable por caso/grupo y con
         # un run_name legible en la lista de trazas.
+        run_id = uuid.uuid4()
         run_config = {
             "run_name": f"chat:{settings.caso_negocio}:turno-{turno}",
+            "run_id": run_id,
             "tags": [settings.caso_negocio, f"grupo-{settings.grupo}"],
             "metadata": {"caso": settings.caso_negocio, "grupo": settings.grupo, "turno": turno},
         }

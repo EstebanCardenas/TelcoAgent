@@ -1,5 +1,6 @@
 from cli.config import Settings
 import requests as req
+from observability.tracing import trazable
 
 
 class RagError(Exception):
@@ -53,6 +54,7 @@ class RagClient:
         except (TypeError, ValueError):
             return None
 
+    @trazable(name="rag_login")
     def login(self) -> None:
         """Autentica contra la API del RAG (POST /api/v1/login) y almacena el token Bearer."""
         if not self.base_url or not self.email or not self.password:
@@ -81,7 +83,9 @@ class RagClient:
         except (ValueError, KeyError):
             raise RagError("respuesta_invalida", "El login del RAG no devolvió un access_token utilizable.")
 
+    @trazable(name="rag_query_knowledge_base")
     def query_knowledge_base(self, query: str) -> dict:
+
         """Consulta la base de conocimiento del RAG (POST /api/v1/ask).
 
         Devuelve `{"respuesta": str, "fuentes": list[str]}` o levanta `RagError`.
