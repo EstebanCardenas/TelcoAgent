@@ -34,6 +34,7 @@ from pydantic import BaseModel, Field
 
 from cli.config import get_settings
 from agent.rag_client import RagClient, RagError
+from observability.tracing import trazable
 
 # Si el RAG responde 429 con un `Retry-After` corto, la herramienta espera y
 # reintenta una vez. Si la espera es mayor, no bloquea el turno: devuelve el
@@ -93,8 +94,10 @@ def _error(codigo: str, mensaje: str, accion_sugerida: str, **extra) -> str:
     )
 
 
+@trazable(name="api_empresarial_get")
 def _get_api(ruta: str, params: dict | None = None) -> tuple[dict | list | None, str | None]:
     """GET contra la API empresarial. Devuelve (datos, error) — nunca lanza."""
+
     settings = get_settings()
     url = f"{settings.api_base_url.rstrip('/')}{ruta}"
     try:
@@ -246,6 +249,7 @@ def obtener_contacto(contacto_id: str) -> str:
     return _ok(contacto=datos)
 
 
+@trazable(name="cliente_existe")
 def cliente_existe(numero_identificacion: str) -> bool:
     """¿Hay un cliente con esa cédula? Consulta pública, sin autenticación.
 

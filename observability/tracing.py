@@ -18,6 +18,14 @@ def tracing_activo() -> bool:
     )
 
 
+def get_client():
+    """Instancia y retorna un cliente de LangSmith para tracing y consulta de trazas."""
+    from langsmith import Client
+
+    api_key = os.getenv("LANGCHAIN_API_KEY") or os.getenv("LANGSMITH_API_KEY")
+    return Client(api_key=api_key)
+
+
 def trazable(name: str | None = None) -> Callable:
     """Aplica @traceable de LangSmith si hay tracing configurado; si no, no-op."""
 
