@@ -30,6 +30,7 @@ completan una pieza y las pruebas de esa semana pasan de rojo a verde.
 - [2. Puesta en marcha](#2-puesta-en-marcha)
 - [3. Desplegar el API empresarial en un puerto](#3-desplegar-el-api-empresarial-en-un-puerto)
 - [4. Usar el CLI](#4-usar-el-cli)
+  - [Ejecutar con Docker Compose](#ejecutar-con-docker-compose)
   - [Personalizar la interfaz del CLI](#personalizar-la-interfaz-del-cli)
 - [5. Estructura del proyecto](#5-estructura-del-proyecto)
 - [6. Arquitectura propuesta](#6-arquitectura-propuesta)
@@ -148,6 +149,29 @@ inmediato. `agente herramientas` y `agente chat` le avisarán con un mensaje cla
 que **el agente todavía no está implementado**: eso es lo esperado hasta que
 completen la semana 2. El CLI está diseñado para arrancar y degradar con
 elegancia mientras el agente crece.
+
+### Ejecutar con Docker Compose
+
+Si prefiere ejecutar el agente dentro de un contenedor Docker (utilizando la imagen `estebancardenas/telco:2026-20`), use el archivo `docker-compose.yml` incluido:
+
+```bash
+# Iniciar el chat interactivo en la terminal
+docker compose run --rm agente
+```
+
+> **¿Por qué `docker compose run --rm`?**
+> * Conecta tu terminal e interactividad (`STDIN` y `TTY`) directamente con el chat en tiempo real.
+> * La bandera `--rm` elimina automáticamente el contenedor temporal al salir de la sesión (`salir`, `Ctrl+C`), evitando que se acumulen contenedores huérfanos en tu disco.
+
+También puede ejecutar cualquier otro subcomando del CLI mediante Docker:
+
+```bash
+docker compose run --rm agente config            # ver configuración activa
+docker compose run --rm agente herramientas      # listar tools disponibles
+docker compose run --rm agente version           # ver versión
+```
+
+> **Prerrequisitos:** Asegúrese de tener corriendo **Ollama** en su máquina (`ollama serve` con el modelo `qwen2.5:14b`) y el **API empresarial** desplegada en el puerto `8080` (`docker compose up -d` en el repositorio de la API).
 
 ### Personalizar la interfaz del CLI
 
