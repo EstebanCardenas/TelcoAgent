@@ -172,3 +172,100 @@ Diferencias con el diagrama de la semana 1:
   proceso del agente y las tres que escriben viven en el servidor MCP.
 - La red de seguridad del ciclo vive en el estado (`iteracion`, `max_iteraciones`).
 - La rama de autenticación queda marcada como alcance de la fase dos.
+
+---
+
+# Diagrama actualizado — semana 4 (Memoria y Contexto)
+
+Este diagrama evoluciona el flujo de la semana 2 incorporando las estrategias de persistencia nativas de LangGraph: el **Checkpointer** para el estado inmediato de la sesión y el **Store** para el contexto global a largo plazo, además de un nodo para la compresión de contexto.
+
+## Justificación de Negocio (Caso Telco Andina)
+
+- **Memoria de Corto Plazo (Checkpointer):** Mantiene el hilo continuo de la conversación actual. Evita que el cliente deba repetir información que ya proporcionó durante la interacción (ej. "ya reinicié el módem hace 5 minutos") y permite al agente tener en cuenta pasos de *troubleshooting* ya ejecutados.
+- **Memoria de Largo Plazo (Store):** Almacena perfiles e historial transversal del cliente. Permite identificar si el cliente sufre fallas de forma recurrente, conocer su plan contratado y compensaciones previas, lo que habilita decisiones estratégicas del agente (como priorizar un caso o asignarlo directamente a retención para prevenir el *churn*).
+- **Compresión de Contexto:** Cuando una sesión iterativa se extiende demasiado en múltiples turnos, un nodo asume la tarea de resumir el historial más antiguo. Esto protege la ventana de contexto del LLM de desbordarse y mantiene al agente enfocado en los hechos clave (sin distraerse en verbosidad o interacciones pasadas).
+
+```mermaid
+flowchart TD
+    classDef ovalo fill:#2d2d2d,stroke:#a0a0a0,stroke-width:2px,color:#ffffff;
+    classDef rectangulo fill:#1e1e1e,stroke:#a0a0a0,stroke-width:2px,color:#ffffff;
+    classDef nodoLLM fill:#4a148c,stroke:#ce93d8,stroke-width:4px,color:#ffffff;
+    classDef rombo fill:#1e1e1e,stroke:#a0a0a0,stroke-width:2px,color:#ffffff;
+    classDef fase2 fill:#1e1e1e,stroke:#666,stroke-width:2px,color:#888888,stroke-dasharray: 5 5;
+    classDef memoria fill:#004d40,stroke:#80cbc4,stroke-width:2px,color:#ffffff;
+
+    INICIO(["Mensaje del cliente<br>+ metadatos (canal, timestamp, sesión)"])
+
+    CHECKPOINTER[("Checkpointer<br>Memoria Corto Plazo")]
+    STORE[("Store<br>Memoria Largo Plazo")]
+
+    RECEPCION["recepcion<br>Obtiene el contacto real del punto de integración:<br>lo trae si el cliente lo citó, o lo registra"]
+
+    DEC_COMPRESION{"¿Mensajes > Umbral?"}
+    COMPRESION["compresion_contexto<br>Resume mensajes antiguos<br>para no desbordar el LLM"]
+
+    ANALISIS["analisis<br>Tono, urgencia, riesgo de cancelación,<br>categoría y señales del texto"]
+
+    CONSULTA["consulta<br>Decide qué información necesita"]
+
+    DEC_TOOLS{"¿Pidió herramientas?"}
+
+    TOOLS["tool_node<br>Ejecuta las consultas pedidas"]
+
+    subgraph LECTURA ["Herramientas de consulta"]
+        T1["consultar_base_conocimiento_publica<br>RAG institucional"]
+        T2["consultar_politicas_institucionales<br>vip · falla-masiva · palabras-clave"]
+        T3["consultar_casos_resueltos<br>Precedentes"]
+        T4["obtener_contacto<br>Punto de integración"]
+    end
+
+    DECISION["decision<br>Resolver o escalar, con área,<br>prioridad y justificación"]
+
+    ACCIONES["acciones<br>Registra la telemetría y crea el ticket<br>con los valores del estado"]
+
+    subgraph ESCRITURA ["Servidor MCP · proceso independiente por stdio"]
+        T5["registrar_contacto"]
+        T6["registrar_telemetria"]
+        T7["crear_ticket_escalamiento"]
+    end
+
+    RESPUESTA["respuesta<br>Respuesta al cliente en el tono adecuado<br>+ expediente de siete secciones"]
+
+    AUTH["Autenticación del cliente y acceso al perfil<br>Alcance de la fase dos"]
+
+    FIN(["Expediente auditable<br>+ respuesta al cliente"])
+
+    INICIO --> CHECKPOINTER
+    CHECKPOINTER --> RECEPCION
+
+    STORE -.-> |"Carga de perfil"| RECEPCION
+
+    RECEPCION --> DEC_COMPRESION
+    DEC_COMPRESION -- "Sí" --> COMPRESION
+    COMPRESION --> ANALISIS
+    DEC_COMPRESION -- "No" --> ANALISIS
+    
+    ANALISIS --> CONSULTA
+    CONSULTA --> DEC_TOOLS
+    DEC_TOOLS -- "Sí" --> TOOLS
+    DEC_TOOLS -- "No" --> DECISION
+    TOOLS --> LECTURA
+    LECTURA --> CONSULTA
+    DECISION --> ACCIONES
+    ACCIONES --> ESCRITURA
+    ESCRITURA --> RESPUESTA
+    RECEPCION -.-> T5
+    
+    RESPUESTA -.-> |"Actualiza perfil histórico"| STORE
+    RESPUESTA --> CHECKPOINTER
+    CHECKPOINTER --> FIN
+
+    AUTH -.-> ESCRITURA
+
+    class INICIO,FIN ovalo;
+    class RECEPCION,TOOLS,ACCIONES,T1,T2,T3,T4,T5,T6,T7 rectangulo;
+    class ANALISIS,CONSULTA,DECISION,RESPUESTA,COMPRESION nodoLLM;
+    class DEC_TOOLS,DEC_COMPRESION rombo;
+    class AUTH fase2;
+    class CHECKPOINTER,STORE memoria;
+```

@@ -115,13 +115,15 @@ async def _chat(usar_mcp: bool):
     from prompt_toolkit.patch_stdout import patch_stdout
 
     from agent.graph import build_graph
+    from agent.memory.checkpointer import build_checkpointer
 
     settings = get_settings()
     ui.banner(settings)
 
     tools = await _reunir_tools(usar_mcp)
     try:
-        graph = build_graph(tools=tools)
+        checkpointer = build_checkpointer("sqlite")
+        graph = build_graph(tools=tools, checkpointer=checkpointer)
     except NotImplementedError:
         ui.error("El agente todavía no está implementado.")
         ui.aviso("Implemente build_graph en agent/graph.py (semana 2) y vuelva a intentarlo.")
@@ -130,6 +132,7 @@ async def _chat(usar_mcp: bool):
     historia: list = []
     turno = 0
     session = PromptSession()
+    thread_id = str(uuid.uuid4())
 
     while True:
         try:
@@ -144,6 +147,7 @@ async def _chat(usar_mcp: bool):
             break
         if texto == "/nueva":
             historia = []
+            thread_id = str(uuid.uuid4())
             ui.aviso("Conversación reiniciada.")
             continue
         if texto == "/ayuda":
@@ -154,10 +158,9 @@ async def _chat(usar_mcp: bool):
         turno += 1
         # Etiqueta cada turno en LangSmith (laboratorio 9): filtrable por caso/grupo y con
         # un run_name legible en la lista de trazas.
-        run_id = uuid.uuid4()
         run_config = {
+            "configurable": {"thread_id": thread_id},
             "run_name": f"chat:{settings.caso_negocio}:turno-{turno}",
-            "run_id": run_id,
             "tags": [settings.caso_negocio, f"grupo-{settings.grupo}"],
             "metadata": {"caso": settings.caso_negocio, "grupo": settings.grupo, "turno": turno},
         }
