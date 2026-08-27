@@ -9,6 +9,5 @@ contexto cuando la conversación supera un umbral.
 
 def build_store():
     """Retorna el Store de memoria de largo plazo del agente."""
-    raise NotImplementedError(
-        "Semana 4: implementar la memoria de largo plazo siguiendo el laboratorio 12."
-    )
+    from langgraph.store.memory import InMemoryStore
+    return InMemoryStore()

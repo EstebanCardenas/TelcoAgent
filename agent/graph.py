@@ -66,7 +66,9 @@ Responde SOLO con un JSON, sin texto alrededor, con estas claves:
   "requiere_datos_privados": true si hay que mirar la cuenta del cliente, false si es información pública
 
 Mensaje del cliente:
-{mensaje}"""
+{mensaje}
+
+{resumen}"""
 
 PROMPT_CONSULTA = """Eres el agente de atención al cliente de Telco Andina. Ya clasificaste el caso:
 
@@ -133,6 +135,15 @@ lo vas a verificar y anótalo en la sección 7 como pendiente.
 
 El expediente termina en la sección 7. No escribas nada después: ni cierres, ni resúmenes de lo que
 acabas de redactar, ni comentarios sobre estas instrucciones."""
+
+PROMPT_COMPRESION = """Eres el sistema de memoria de Telco Andina. Resume el historial de esta conversación para mantener el contexto esencial sin desbordar el límite de tokens.
+
+Historial a resumir:
+{historial}
+
+{resumen_anterior}
+
+Escribe un resumen acumulativo y conciso de los hechos clave, problemas reportados, validaciones realizadas y acuerdos hasta este punto. Omite saludos o verificaciones sin importancia. Responde SOLO con el resumen."""
 
 
 def _texto_del_cliente(messages: list) -> str:
@@ -277,7 +288,7 @@ def _resumen_del_caso(state: AgentState) -> str:
     else:
         cliente = "no identificado"
 
-    return (
+    base = (
         f"- Contacto: {state.get('contacto_id') or 'sin registrar'}"
         f" · Cliente: {cliente}\n"
         f"- Mensaje: {state.get('texto_contacto', '')}\n"
@@ -286,6 +297,11 @@ def _resumen_del_caso(state: AgentState) -> str:
         f"- Categoría: {state.get('categoria')}"
         f" · Secundaria: {state.get('categoria_secundaria') or 'ninguna'}"
     )
+    
+    if state.get("resumen_contexto"):
+        base += f"\n- Resumen Historial Prevío: {state['resumen_contexto']}"
+        
+    return base
 
 
 def _consultas(messages: list) -> tuple[str, str]:
@@ -391,13 +407,58 @@ def build_graph(tools: list | None = None, checkpointer=None):
             "cliente_identificado": identificado,
         }
 
+    def compresion_contexto(state: AgentState):
+        """Resume mensajes antiguos para proteger la ventana de contexto."""
+        from langchain_core.messages import RemoveMessage
+
+        mensajes = _conversacion(state["messages"])
+        
+        # Encontrar el índice del último HumanMessage
+        ultimo_human_idx = len(mensajes) - 1
+        while ultimo_human_idx >= 0 and not isinstance(mensajes[ultimo_human_idx], HumanMessage):
+            ultimo_human_idx -= 1
+            
+        if ultimo_human_idx <= 0:
+            return {}
+            
+        mensajes_a_comprimir = mensajes[:ultimo_human_idx]
+        historial_texto = "\n".join([f"{m.type}: {m.content}" for m in mensajes_a_comprimir])
+        
+        resumen_anterior = state.get("resumen_contexto")
+        texto_anterior = f"Resumen acumulado previo:\n{resumen_anterior}" if resumen_anterior else ""
+        
+        prompt = PROMPT_COMPRESION.format(historial=historial_texto, resumen_anterior=texto_anterior)
+        nuevo_resumen = modelo_base.invoke([HumanMessage(content=prompt)]).content
+        
+        # Generar comandos RemoveMessage usando los IDs reales de los mensajes (incluyendo los ignorados por _conversacion)
+        # Queremos eliminar todos los mensajes ANTERIORES al último HumanMessage en state["messages"]
+        todos_los_mensajes = state["messages"]
+        idx_human_original = len(todos_los_mensajes) - 1
+        while idx_human_original >= 0 and not isinstance(todos_los_mensajes[idx_human_original], HumanMessage):
+            idx_human_original -= 1
+            
+        remover = [RemoveMessage(id=m.id) for m in todos_los_mensajes[:idx_human_original] if m.id]
+        
+        return {
+            "resumen_contexto": str(nuevo_resumen).strip(),
+            "messages": remover
+        }
+
+    def debe_comprimir(state: AgentState):
+        """Si hay más de 6 mensajes en la conversación activa, comprime."""
+        mensajes = _conversacion(state["messages"])
+        if len(mensajes) > 6:
+            return "compresion_contexto"
+        return "analisis"
+
     def analisis(state: AgentState):
         """Clasifica el mensaje y escribe el resultado en el estado.
 
         Cada campo tiene un valor por defecto para que una respuesta inesperada
         no rompa el ruteo.
         """
-        prompt = PROMPT_ANALISIS.format(mensaje=state.get("texto_contacto", ""))
+        resumen = f"Contexto previo:\n{state.get('resumen_contexto')}" if state.get("resumen_contexto") else ""
+        prompt = PROMPT_ANALISIS.format(mensaje=state.get("texto_contacto", ""), resumen=resumen)
         datos = _json_de(modelo_base.invoke([HumanMessage(content=prompt)]).content)
 
         secundaria = datos.get("categoria_secundaria")
@@ -610,6 +671,7 @@ def build_graph(tools: list | None = None, checkpointer=None):
     agent_builder = StateGraph(AgentState)
 
     agent_builder.add_node("recepcion", recepcion)
+    agent_builder.add_node("compresion_contexto", compresion_contexto)
     agent_builder.add_node("analisis", analisis)
     agent_builder.add_node("consulta", consulta)
     agent_builder.add_node("tool_node", ToolNode(tools_consulta))
@@ -618,7 +680,8 @@ def build_graph(tools: list | None = None, checkpointer=None):
     agent_builder.add_node("respuesta", respuesta)
 
     agent_builder.add_edge(START, "recepcion")
-    agent_builder.add_edge("recepcion", "analisis")
+    agent_builder.add_conditional_edges("recepcion", debe_comprimir, ["compresion_contexto", "analisis"])
+    agent_builder.add_edge("compresion_contexto", "analisis")
     agent_builder.add_edge("analisis", "consulta")
     agent_builder.add_conditional_edges("consulta", hay_consultas_pendientes, ["tool_node", "decision"])
     agent_builder.add_edge("tool_node", "consulta")

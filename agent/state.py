@@ -25,6 +25,9 @@ class AgentState(TypedDict, total=False):
 
     messages: Annotated[list[AnyMessage], add_messages]
 
+    # Compresión de contexto
+    resumen_contexto: str
+
     # Recepción (punto de integración)
     contacto_id: str
     cliente_id: str | None
