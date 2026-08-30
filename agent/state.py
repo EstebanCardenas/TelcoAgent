@@ -28,6 +28,11 @@ class AgentState(TypedDict, total=False):
     # Compresión de contexto
     resumen_contexto: str
 
+    # Memoria de largo plazo (Store)
+    identidad_memoria: str
+    perfil_cliente: str
+    perfil_datos: dict
+
     # Recepción (punto de integración)
     contacto_id: str
     cliente_id: str | None

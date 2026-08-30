@@ -105,17 +105,23 @@ def probar_tool(nombre: str, argumentos: str, sin_mcp: bool):
 
 @cli.command()
 @click.option("--sin-mcp", is_flag=True, help="No conectar el servidor MCP (solo tools locales).")
-def chat(sin_mcp: bool):
+@click.option(
+    "--thread",
+    default=None,
+    help="Retoma una conversación anterior por su thread_id. Sin esto se abre una nueva.",
+)
+def chat(sin_mcp: bool, thread: str | None):
     """Conversación interactiva con el agente."""
-    asyncio.run(_chat(usar_mcp=not sin_mcp))
+    asyncio.run(_chat(usar_mcp=not sin_mcp, thread_id=thread))
 
 
-async def _chat(usar_mcp: bool):
+async def _chat(usar_mcp: bool, thread_id: str | None = None):
     from prompt_toolkit import PromptSession
     from prompt_toolkit.patch_stdout import patch_stdout
 
     from agent.graph import build_graph
     from agent.memory.checkpointer import build_checkpointer
+    from agent.memory.store import build_store
 
     settings = get_settings()
     ui.banner(settings)
@@ -123,7 +129,8 @@ async def _chat(usar_mcp: bool):
     tools = await _reunir_tools(usar_mcp)
     try:
         checkpointer = build_checkpointer("sqlite")
-        graph = build_graph(tools=tools, checkpointer=checkpointer)
+        store = build_store("sqlite")
+        graph = build_graph(tools=tools, checkpointer=checkpointer, store=store)
     except NotImplementedError:
         ui.error("El agente todavía no está implementado.")
         ui.aviso("Implemente build_graph en agent/graph.py (semana 2) y vuelva a intentarlo.")
@@ -132,7 +139,12 @@ async def _chat(usar_mcp: bool):
     historia: list = []
     turno = 0
     session = PromptSession()
-    thread_id = str(uuid.uuid4())
+
+    if thread_id:
+        ui.aviso(f"Retomando la conversación {thread_id}.")
+    else:
+        thread_id = str(uuid.uuid4())
+        ui.aviso(f"Conversación {thread_id} · retómela con: agente chat --thread {thread_id}")
 
     while True:
         try:
@@ -148,7 +160,7 @@ async def _chat(usar_mcp: bool):
         if texto == "/nueva":
             historia = []
             thread_id = str(uuid.uuid4())
-            ui.aviso("Conversación reiniciada.")
+            ui.aviso(f"Conversación reiniciada: {thread_id}")
             continue
         if texto == "/ayuda":
             ui.console.print("[dim]/nueva reinicia la conversación · /salir termina[/dim]")
