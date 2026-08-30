@@ -31,7 +31,6 @@ class AgentState(TypedDict, total=False):
     # Memoria de largo plazo (Store)
     identidad_memoria: str
     perfil_cliente: str
-    perfil_datos: dict
 
     # Recepción (punto de integración)
     contacto_id: str

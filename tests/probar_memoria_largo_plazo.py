@@ -21,7 +21,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from agent.graph import build_graph
 from agent.mcp_client import load_mcp_tools_safe
 from agent.memory.checkpointer import build_checkpointer
-from agent.memory.store import NS_HISTORIAL, cargar_perfil, historial_cliente
+from agent.memory.store import NS_HISTORIAL, build_store, cargar_perfil, historial_cliente
 from agent.tools import get_local_tools
 from cli.config import get_settings
 
@@ -41,8 +41,6 @@ async def armar_agente():
     if error_mcp:
         print(f"  [aviso] servidor MCP no disponible ({error_mcp}); se sigue con tools locales")
     tools.extend(mcp_tools)
-
-    from agent.memory.store import build_store
 
     checkpointer = build_checkpointer("sqlite")
     store = build_store("sqlite")

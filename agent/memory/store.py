@@ -30,7 +30,7 @@ NS_HISTORIAL = "historial"
 # El perfil viaja en el prompt de cada turno: crecer sin límite se comería la
 # ventana de contexto.
 MAX_COMPROMISOS = 3
-MAX_TICKETS = 5
+MAX_ITEMS = 5
 LARGO_COMPROMISO = 160
 
 # `decision` firma sus correcciones de política dentro de la justificación: eso
@@ -132,7 +132,8 @@ def perfil_a_texto(perfil: dict | None) -> str:
     if perfil.get("ultima_interaccion"):
         partes.append(f"último contacto: {perfil['ultima_interaccion'][:10]}")
 
-    return ". ".join(partes) + "." if partes else ""
+    # rstrip: los compromisos ya vienen con punto final y quedaría duplicado.
+    return ". ".join(parte.rstrip(". ") for parte in partes) + "." if partes else ""
 
 
 # ── Escritura ────────────────────────────────────────────────────────────────
@@ -173,11 +174,6 @@ def actualizar_perfil(store, identidad: str, state) -> dict | None:
 
     if state.get("cliente_id"):
         perfil["cliente_id"] = state["cliente_id"]
-    cedula = _CEDULA.search(state.get("texto_contacto") or "")
-    if cedula:
-        perfil["cedula"] = cedula.group(0)
-    if state.get("contacto_id"):
-        perfil["ultimo_contacto_id"] = state["contacto_id"]
 
     categorias = dict(perfil.get("categorias") or {})
     for clave in ("categoria", "categoria_secundaria"):
@@ -189,14 +185,12 @@ def actualizar_perfil(store, identidad: str, state) -> dict | None:
     perfil["riesgo_churn_historico"] = bool(
         perfil.get("riesgo_churn_historico") or state.get("riesgo_churn")
     )
-    perfil["ultimo_tono"] = state.get("tono") or perfil.get("ultimo_tono")
-    perfil["ultima_urgencia"] = state.get("urgencia") or perfil.get("ultima_urgencia")
 
     if state.get("ticket_id"):
-        perfil["tickets"] = _recortar([*(perfil.get("tickets") or []), state["ticket_id"]], MAX_TICKETS)
+        perfil["tickets"] = _recortar([*(perfil.get("tickets") or []), state["ticket_id"]], MAX_ITEMS)
     if state.get("decision") == "escalar" and state.get("area_destino"):
         perfil["areas_escalamiento"] = _recortar(
-            [*(perfil.get("areas_escalamiento") or []), state["area_destino"]], MAX_TICKETS
+            [*(perfil.get("areas_escalamiento") or []), state["area_destino"]], MAX_ITEMS
         )
 
     compromiso = _compromiso(state.get("justificacion") or "")
