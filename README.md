@@ -211,8 +211,8 @@ Todos los campos son opcionales; si se omiten se usan valores por defecto.
 │   ├── tools.py         ·   [SEMANA 2] herramientas locales del agente
 │   ├── mcp_client.py    ·   [SEMANA 2] cliente que carga las tools del servidor MCP
 │   ├── memory/          ·   [SEMANA 4] memoria de corto y largo plazo
-│   │   ├── checkpointer.py
-│   │   └── store.py
+│   │   ├── checkpointer.py ·  corto plazo: SqliteSaver por `thread_id`
+│   │   └── store.py     ·   largo plazo: SqliteStore con el perfil del cliente
 │   └── reasoning/       ·   [SEMANA 5] descomposición de tareas (ReAct / Plan-Execute)
 │       └── react.py
 ├── mcp_server/          ← su servidor MCP de acciones

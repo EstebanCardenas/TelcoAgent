@@ -1,8 +1,8 @@
-"""[SEMANA 4 — IMPLEMENTADO] Memoria de corto plazo con checkpointers (laboratorio 11).
+"""[SEMANA 4] Memoria de corto plazo con checkpointers (laboratorio 11).
 
-El equipo debe implementar `build_checkpointer(backend)` retornando un
-checkpointer de LangGraph que persista en disco (SqliteSaver o superior),
-y conectar el CLI para que cada conversación use un `thread_id` propio.
+Persiste el estado de cada conversación en disco, indexado por `thread_id`, para
+que sobreviva al reinicio del CLI. El complemento de largo plazo está en
+`store.py`.
 """
 
 import asyncio

@@ -9,3 +9,4 @@ checkpoints.sqlite
 *.sqlite3
 .langgraph_api/
 *.sqlite-*
+memoria_largo_plazo.sqlite
