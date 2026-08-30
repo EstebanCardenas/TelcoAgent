@@ -317,7 +317,7 @@ def _resumen_del_caso(state: AgentState) -> str:
         base += f"\n- Resumen Historial Prevío: {state['resumen_contexto']}"
 
     if state.get("perfil_cliente"):
-        base += f"\n- Perfil histórico del cliente (memoria de largo plazo): {state['perfil_cliente']}"
+        base += f"\n- Perfil histórico del cliente: {state['perfil_cliente']}"
 
     return base
 
@@ -384,34 +384,25 @@ def build_graph(tools: list | None = None, checkpointer=None, store=None):
     )
     modelo_con_tools = modelo_base.bind_tools(tools_consulta)
 
-    def _con_perfil(salida: dict, store, identidad_previa: str | None) -> dict:
-        """Añade a la salida de `recepcion` lo que el Store sabe del cliente.
-
-        Corre después de resolver el contacto porque de ahí sale la identidad.
-        `salida` todavía no está fusionada con el estado, así que la identidad de
-        turnos anteriores llega por parámetro.
-        """
+    def _con_perfil(salida: dict, store, state: AgentState) -> dict:
+        """Añade a la salida de `recepcion` lo que el Store sabe del cliente."""
         if store is None:
             return salida
 
-        identidad = identidad_cliente({**salida, "identidad_memoria": identidad_previa})
+        identidad = identidad_cliente({**state, **salida})
         if not identidad:
             return salida
 
         salida["identidad_memoria"] = identidad
 
         perfil = cargar_perfil(store, identidad)
-        if not perfil:
-            return salida
-
-        salida["perfil_datos"] = perfil
-        salida["perfil_cliente"] = perfil_a_texto(perfil)
+        if perfil:
+            salida["perfil_cliente"] = perfil_a_texto(perfil)
         return salida
 
     async def recepcion(state: AgentState, store: BaseStore):
         """Consigue el contacto real del punto de integración y carga su perfil."""
         texto = _texto_del_cliente(state["messages"])
-        identidad_previa = state.get("identidad_memoria")
 
         citado = re.search(r"\bCTO-\d+\b", texto, re.IGNORECASE)
         if citado:
@@ -426,7 +417,7 @@ def build_graph(tools: list | None = None, checkpointer=None, store=None):
                         "texto_contacto": contacto.get("texto") or texto,
                     },
                     store,
-                    identidad_previa,
+                    state,
                 )
 
         # La API confirma que la persona existe sin revelar dato alguno suyo.
@@ -449,7 +440,7 @@ def build_graph(tools: list | None = None, checkpointer=None, store=None):
                         "cliente_identificado": identificado,
                     },
                     store,
-                    identidad_previa,
+                    state,
                 )
 
         # El punto de integración no respondió: se atiende igual, sin constancia.
@@ -461,7 +452,7 @@ def build_graph(tools: list | None = None, checkpointer=None, store=None):
                 "cliente_identificado": identificado,
             },
             store,
-            identidad_previa,
+            state,
         )
 
     def compresion_contexto(state: AgentState):
@@ -701,12 +692,7 @@ def build_graph(tools: list | None = None, checkpointer=None, store=None):
         return salida
 
     def respuesta(state: AgentState, store: BaseStore):
-        """Redacta la respuesta al cliente y actualiza su perfil de largo plazo.
-
-        La escritura va al cierre del turno porque es el único punto donde ya
-        están auditados todos los valores que el perfil guarda: categoría,
-        riesgo de cancelación, ticket y área.
-        """
+        """Redacta la respuesta al cliente y actualiza su perfil de largo plazo."""
         constancia = ", ".join(
             filter(
                 None,
@@ -733,7 +719,6 @@ def build_graph(tools: list | None = None, checkpointer=None, store=None):
         if store is not None and identidad:
             perfil = actualizar_perfil(store, identidad, state)
             if perfil:
-                salida["perfil_datos"] = perfil
                 salida["perfil_cliente"] = perfil_a_texto(perfil)
 
         return salida
