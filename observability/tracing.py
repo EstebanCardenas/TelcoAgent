@@ -8,6 +8,7 @@ Este módulo agrega:
   - `tracing_activo`: chequeo usado por el CLI y los tests.
 """
 
+import functools
 import os
 from typing import Callable
 
@@ -27,13 +28,28 @@ def get_client():
 
 
 def trazable(name: str | None = None) -> Callable:
-    """Aplica @traceable de LangSmith si hay tracing configurado; si no, no-op."""
+    """Aplica @traceable de LangSmith si hay tracing configurado; si no, no-op.
+
+    La decisión se toma en la primera llamada y no al importar el módulo: el
+    `.env` que trae LANGCHAIN_API_KEY lo carga `cli.config`, y un módulo que se
+    importe antes que él se quedaría sin trazas.
+    """
 
     def decorator(func: Callable) -> Callable:
-        if tracing_activo():
-            from langsmith import traceable
+        resuelta = None
 
-            return traceable(name=name or func.__name__)(func)
-        return func
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            nonlocal resuelta
+            if resuelta is None:
+                if tracing_activo():
+                    from langsmith import traceable
+
+                    resuelta = traceable(name=name or func.__name__)(func)
+                else:
+                    resuelta = func
+            return resuelta(*args, **kwargs)
+
+        return wrapper
 
     return decorator

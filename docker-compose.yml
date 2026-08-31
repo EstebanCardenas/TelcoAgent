@@ -14,5 +14,14 @@ services:
       - RAG_EMAIL=grupo25_telecom@uniandes.edu.co
       - RAG_PASSWORD=telecom171
       - RAG_COLLECTION=telecom
+      # Observabilidad (semana 3). Los valores se toman del .env local, que no
+      # se versiona: la llave nunca queda escrita en este archivo.
+      - LANGCHAIN_TRACING_V2=${LANGCHAIN_TRACING_V2:-false}
+      - LANGCHAIN_API_KEY=${LANGCHAIN_API_KEY:-}
+      - LANGCHAIN_PROJECT=${LANGCHAIN_PROJECT:-misw4412-grupo25}
+    volumes:
+      # El subproceso del servidor MCP no hereda el entorno del servicio, así que
+      # lee la URL de la API empresarial desde este archivo.
+      - ./.env.docker:/app/.env:ro
     extra_hosts:
       - "host.docker.internal:host-gateway"
