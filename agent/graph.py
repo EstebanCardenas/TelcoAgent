@@ -15,15 +15,23 @@ El grafo sigue el diagrama de la semana 1 y respeta sus tres tipos de caja:
 
 Forma del grafo:
 
-    START -> recepcion -> analisis -> consulta -> tool_node -> consulta -> ...
-                                          |
-                                          v
-                                      decision -> acciones -> respuesta -> END
+    START -> recepcion -> [compresion_contexto] -> analisis -> consulta -> tool_node -> consulta -> ...
+                                                                    |
+                                                                    v
+                                                  decision -> acciones -> respuesta -> END
 
 El código garantiza lo que el caso exige por auditoría: `acciones` corre siempre
 entre la decisión y la respuesta, y registra los valores que están en el estado.
 Al modelo le quedan las decisiones de criterio, que es lo que el diagrama marca
 como agéntico.
+
+Memoria (semana 4). Dos capas ortogonales al flujo:
+
+  Corto plazo   el `checkpointer` guarda el estado por `thread_id`, y
+                `compresion_contexto` lo poda cuando la conversación se alarga.
+  Largo plazo   el `store` guarda el perfil del cliente entre sesiones distintas.
+                `recepcion` lo lee y `respuesta` lo actualiza; LangGraph se lo
+                inyecta a los nodos que declaran `store: BaseStore`.
 """
 
 import json
@@ -33,7 +41,14 @@ from langchain_ollama.chat_models import ChatOllama
 from langchain.messages import AIMessage, HumanMessage, SystemMessage
 from langgraph.graph import StateGraph, START, END
 from langgraph.prebuilt import ToolNode
+from langgraph.store.base import BaseStore
 
+from agent.memory.store import (
+    actualizar_perfil,
+    cargar_perfil,
+    identidad_cliente,
+    perfil_a_texto,
+)
 from agent.tools import cliente_existe, get_local_tools, obtener_contacto
 from agent.state import AgentState
 from cli.config import get_settings
@@ -300,7 +315,10 @@ def _resumen_del_caso(state: AgentState) -> str:
     
     if state.get("resumen_contexto"):
         base += f"\n- Resumen Historial Prevío: {state['resumen_contexto']}"
-        
+
+    if state.get("perfil_cliente"):
+        base += f"\n- Perfil histórico del cliente: {state['perfil_cliente']}"
+
     return base
 
 
@@ -335,13 +353,15 @@ def _consultas(messages: list) -> tuple[str, str]:
     return texto_exitos, texto_fallas
 
 
-def build_graph(tools: list | None = None, checkpointer=None):
+def build_graph(tools: list | None = None, checkpointer=None, store=None):
     """Compila y devuelve el grafo del agente, listo para invocar.
 
     Parámetros:
         tools:        herramientas disponibles (locales de consulta + MCP de acción).
                       Se reparten aquí: el modelo solo ve las de consulta.
         checkpointer: memoria de corto plazo (se usa desde la semana 4).
+        store:        memoria de largo plazo. Sin él el agente funciona igual,
+                      pero sin reconocer clientes de otras sesiones.
     """
     if tools is None:
         tools = get_local_tools()
@@ -364,8 +384,24 @@ def build_graph(tools: list | None = None, checkpointer=None):
     )
     modelo_con_tools = modelo_base.bind_tools(tools_consulta)
 
-    async def recepcion(state: AgentState):
-        """Consigue el contacto real del punto de integración."""
+    def _con_perfil(salida: dict, store, state: AgentState) -> dict:
+        """Añade a la salida de `recepcion` lo que el Store sabe del cliente."""
+        if store is None:
+            return salida
+
+        identidad = identidad_cliente({**state, **salida})
+        if not identidad:
+            return salida
+
+        salida["identidad_memoria"] = identidad
+
+        perfil = cargar_perfil(store, identidad)
+        if perfil:
+            salida["perfil_cliente"] = perfil_a_texto(perfil)
+        return salida
+
+    async def recepcion(state: AgentState, store: BaseStore):
+        """Consigue el contacto real del punto de integración y carga su perfil."""
         texto = _texto_del_cliente(state["messages"])
 
         citado = re.search(r"\bCTO-\d+\b", texto, re.IGNORECASE)
@@ -374,11 +410,15 @@ def build_graph(tools: list | None = None, checkpointer=None):
             datos = _json_de(_texto_del_resultado(crudo))
             if datos.get("estado") == "ok":
                 contacto = datos["contacto"]
-                return {
-                    "contacto_id": contacto["id"],
-                    "cliente_id": contacto.get("cliente_id"),
-                    "texto_contacto": contacto.get("texto") or texto,
-                }
+                return _con_perfil(
+                    {
+                        "contacto_id": contacto["id"],
+                        "cliente_id": contacto.get("cliente_id"),
+                        "texto_contacto": contacto.get("texto") or texto,
+                    },
+                    store,
+                    state,
+                )
 
         # La API confirma que la persona existe sin revelar dato alguno suyo.
         # Consultar su perfil exige autenticación.
@@ -392,20 +432,28 @@ def build_graph(tools: list | None = None, checkpointer=None):
             crudo = await registrar.ainvoke({"texto": texto, "canal": "chat"})
             datos = _json_de(_texto_del_resultado(crudo))
             if datos.get("id"):
-                return {
-                    "contacto_id": datos["id"],
-                    "cliente_id": datos.get("cliente_id"),
-                    "texto_contacto": texto,
-                    "cliente_identificado": identificado,
-                }
+                return _con_perfil(
+                    {
+                        "contacto_id": datos["id"],
+                        "cliente_id": datos.get("cliente_id"),
+                        "texto_contacto": texto,
+                        "cliente_identificado": identificado,
+                    },
+                    store,
+                    state,
+                )
 
         # El punto de integración no respondió: se atiende igual, sin constancia.
-        return {
-            "contacto_id": "",
-            "cliente_id": None,
-            "texto_contacto": texto,
-            "cliente_identificado": identificado,
-        }
+        return _con_perfil(
+            {
+                "contacto_id": "",
+                "cliente_id": None,
+                "texto_contacto": texto,
+                "cliente_identificado": identificado,
+            },
+            store,
+            state,
+        )
 
     def compresion_contexto(state: AgentState):
         """Resume mensajes antiguos para proteger la ventana de contexto."""
@@ -457,7 +505,12 @@ def build_graph(tools: list | None = None, checkpointer=None):
         Cada campo tiene un valor por defecto para que una respuesta inesperada
         no rompa el ruteo.
         """
-        resumen = f"Contexto previo:\n{state.get('resumen_contexto')}" if state.get("resumen_contexto") else ""
+        contexto = []
+        if state.get("resumen_contexto"):
+            contexto.append(f"Contexto previo:\n{state['resumen_contexto']}")
+        if state.get("perfil_cliente"):
+            contexto.append(f"Historial del cliente en sesiones anteriores:\n{state['perfil_cliente']}")
+        resumen = "\n\n".join(contexto)
         prompt = PROMPT_ANALISIS.format(mensaje=state.get("texto_contacto", ""), resumen=resumen)
         datos = _json_de(modelo_base.invoke([HumanMessage(content=prompt)]).content)
 
@@ -638,8 +691,8 @@ def build_graph(tools: list | None = None, checkpointer=None):
         salida["messages"] = [AIMessage(content=f"[auditoría] {resumen}")]
         return salida
 
-    def respuesta(state: AgentState):
-        """Redacta la respuesta al cliente y el expediente de siete secciones."""
+    def respuesta(state: AgentState, store: BaseStore):
+        """Redacta la respuesta al cliente y actualiza su perfil de largo plazo."""
         constancia = ", ".join(
             filter(
                 None,
@@ -660,7 +713,15 @@ def build_graph(tools: list | None = None, checkpointer=None):
             constancia=constancia or "sin constancia registrada",
             hallazgos=exitos,
         )
-        return {"messages": [modelo_base.invoke([HumanMessage(content=prompt)])]}
+        salida = {"messages": [modelo_base.invoke([HumanMessage(content=prompt)])]}
+
+        identidad = identidad_cliente(state)
+        if store is not None and identidad:
+            perfil = actualizar_perfil(store, identidad, state)
+            if perfil:
+                salida["perfil_cliente"] = perfil_a_texto(perfil)
+
+        return salida
 
     def hay_consultas_pendientes(state: AgentState):
         """Arista condicional: ejecutar herramientas o pasar a decidir."""
@@ -689,4 +750,4 @@ def build_graph(tools: list | None = None, checkpointer=None):
     agent_builder.add_edge("acciones", "respuesta")
     agent_builder.add_edge("respuesta", END)
 
-    return agent_builder.compile(checkpointer=checkpointer)
+    return agent_builder.compile(checkpointer=checkpointer, store=store)
