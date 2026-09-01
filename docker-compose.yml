@@ -23,5 +23,11 @@ services:
       # El subproceso del servidor MCP no hereda el entorno del servicio, así que
       # lee la URL de la API empresarial desde este archivo.
       - ./.env.docker:/app/.env:ro
+      # SQLite del checkpointer (corto plazo) y del store (largo plazo). Sin este
+      # volumen, `docker compose run --rm` borra el contenedor y con él los .sqlite.
+      - agente-data:/app/data
     extra_hosts:
       - "host.docker.internal:host-gateway"
+
+volumes:
+  agente-data:

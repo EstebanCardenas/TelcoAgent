@@ -7,8 +7,14 @@ que sobreviva al reinicio del CLI. El complemento de largo plazo está en
 
 import asyncio
 import sqlite3
+from pathlib import Path
+
 from langgraph.checkpoint.sqlite import SqliteSaver
 from langgraph.checkpoint.memory import MemorySaver
+
+# Relativo al cwd (`/app` en Docker). El compose monta un volumen en `data/`
+# para que el archivo sobreviva a `docker compose run --rm`.
+RUTA_CHECKPOINTS = Path("data") / "checkpoints.sqlite"
 
 
 class AsyncSqliteSaver(SqliteSaver):
@@ -30,7 +36,8 @@ class AsyncSqliteSaver(SqliteSaver):
 def build_checkpointer(backend: str = "sqlite"):
     """Retorna un BaseCheckpointSaver según el backend: memory | sqlite | postgres."""
     if backend == "sqlite":
-        conn = sqlite3.connect("checkpoints.sqlite", check_same_thread=False)
+        RUTA_CHECKPOINTS.parent.mkdir(parents=True, exist_ok=True)
+        conn = sqlite3.connect(str(RUTA_CHECKPOINTS), check_same_thread=False)
         return AsyncSqliteSaver(conn)
     elif backend == "memory":
         return MemorySaver()

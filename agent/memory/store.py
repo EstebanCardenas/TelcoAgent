@@ -15,6 +15,7 @@ telemetría, que es lo que la auditoría del caso exige.
 import re
 import sqlite3
 from datetime import datetime, timezone
+from pathlib import Path
 
 from langgraph.store.memory import InMemoryStore
 from langgraph.store.sqlite import SqliteStore
@@ -22,7 +23,7 @@ from langgraph.store.sqlite import SqliteStore
 from observability.tracing import trazable
 
 
-RUTA_STORE = "memoria_largo_plazo.sqlite"
+RUTA_STORE = Path("data") / "memoria_largo_plazo.sqlite"
 
 NS_PERFILES = ("perfiles",)
 NS_HISTORIAL = "historial"
@@ -50,7 +51,8 @@ def build_store(backend: str = "sqlite"):
         # isolation_level=None (autocommit) es obligatorio: SqliteStore abre sus
         # propias transacciones con BEGIN y el modo implícito de sqlite3 las
         # rompe con "cannot start a transaction within a transaction".
-        conn = sqlite3.connect(RUTA_STORE, check_same_thread=False, isolation_level=None)
+        RUTA_STORE.parent.mkdir(parents=True, exist_ok=True)
+        conn = sqlite3.connect(str(RUTA_STORE), check_same_thread=False, isolation_level=None)
         store = SqliteStore(conn)
         store.setup()
         return store
