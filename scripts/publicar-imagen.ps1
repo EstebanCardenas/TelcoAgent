@@ -15,31 +15,41 @@
 .EXAMPLE
     .\scripts\publicar-imagen.ps1
 #>
-$ErrorActionPreference = "Stop"
+# Docker escribe progreso en stderr. Con Stop, PowerShell aborta aunque el
+# comando haya salido 0 (o 1 en un inspect esperado). Se valida $LASTEXITCODE.
+$ErrorActionPreference = "Continue"
 
 $Image = "estebancardenas/telco:2026-20"
 $Platforms = "linux/amd64,linux/arm64"
 $Builder = "telco-multiarch"
 $Root = Split-Path -Parent $PSScriptRoot
 
+function Assert-Docker {
+    param([string]$Accion)
+    if ($LASTEXITCODE -ne 0) {
+        Write-Error "Fallo: $Accion (codigo $LASTEXITCODE)"
+        exit $LASTEXITCODE
+    }
+}
+
 Set-Location $Root
 
 Write-Host "==> 1. Build: preparar builder buildx ($Platforms)"
-$inspect = docker buildx inspect $Builder 2>$null
+docker buildx inspect $Builder 2>$null | Out-Null
 if ($LASTEXITCODE -ne 0) {
     docker buildx create --name $Builder --driver docker-container --bootstrap
-    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    Assert-Docker "docker buildx create $Builder"
 }
 docker buildx use $Builder
-if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+Assert-Docker "docker buildx use $Builder"
 
 Write-Host "==> 2. Docker login"
 docker login
-if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+Assert-Docker "docker login"
 
 Write-Host "==> 3. Docker push: buildx build --platform $Platforms -t $Image --push"
 # --push sube el manifiesto multi-arch. --load solo admite una plataforma.
 docker buildx build --platform $Platforms -t $Image --push $Root
-if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+Assert-Docker "docker buildx build --push"
 
 Write-Host "Listo: $Image ($Platforms)"
