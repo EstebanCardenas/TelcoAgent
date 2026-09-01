@@ -56,6 +56,7 @@ class AgentState(TypedDict, total=False):
     telemetria_id: str | None
     ticket_id: str | None
 
-    # Red de seguridad del ciclo de consulta
+    # ReAct (semana 5): último Thought y red de seguridad del ciclo reason ⇄ act
+    razonamiento: str
     iteracion: int
     max_iteraciones: int
