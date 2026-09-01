@@ -1,21 +1,21 @@
-"""[SEMANA 2] Grafo del agente (laboratorios 4 y 5).
+"""Grafo del agente (laboratorios 4, 5 y 13).
 
 El grafo sigue el diagrama de la semana 1 y respeta sus tres tipos de caja:
 
   Pasos deterministas (cajas técnicas del diagrama)
       `recepcion`  obtiene el contacto real del punto de integración.
-      `tool_node`  ejecuta las consultas que el modelo pidió.
+      `act`        ejecuta la Action (herramienta de consulta) que pidió `reason`.
       `acciones`   registra la telemetría y crea el ticket.
 
   Pasos de razonamiento (cajas moradas del diagrama)
       `analisis`   lee tono, urgencia, riesgo de cancelación y categoría.
-      `consulta`   decide qué herramientas de consulta hacen falta.
+      `reason`     Thought de ReAct: decide la siguiente consulta o concluye.
       `decision`   resuelve o escala, con área, prioridad y justificación.
       `respuesta`  redacta la respuesta al cliente y el expediente.
 
 Forma del grafo:
 
-    START -> recepcion -> [compresion_contexto] -> analisis -> consulta -> tool_node -> consulta -> ...
+    START -> recepcion -> [compresion_contexto] -> analisis -> reason -> act -> reason -> ...
                                                                     |
                                                                     v
                                                   decision -> acciones -> respuesta -> END
@@ -40,7 +40,6 @@ import re
 from langchain_ollama.chat_models import ChatOllama
 from langchain.messages import AIMessage, HumanMessage, SystemMessage
 from langgraph.graph import StateGraph, START, END
-from langgraph.prebuilt import ToolNode
 from langgraph.store.base import BaseStore
 
 from agent.memory.store import (
@@ -49,6 +48,7 @@ from agent.memory.store import (
     identidad_cliente,
     perfil_a_texto,
 )
+from agent.reasoning.react import build_react_nodes, max_iterations
 from agent.tools import cliente_existe, get_local_tools, obtener_contacto
 from agent.state import AgentState
 from cli.config import get_settings
@@ -57,10 +57,6 @@ from cli.config import get_settings
 # Herramientas que ESCRIBEN en el negocio. Viven en el servidor MCP y las invocan
 # los nodos deterministas por su nombre, sin pasar por el modelo.
 TOOLS_DE_ACCION = {"registrar_contacto", "crear_ticket_escalamiento", "registrar_telemetria"}
-
-# Red de seguridad del ciclo de consulta: máximo de pasadas por el nodo
-# `consulta` antes de seguir a la decisión con lo que ya se recolectó.
-MAX_ITERACIONES = 4
 
 TONOS = ("frustrado", "urgente", "agresivo", "neutro", "cordial")
 URGENCIAS = ("alta", "media", "baja")
@@ -84,27 +80,6 @@ Mensaje del cliente:
 {mensaje}
 
 {resumen}"""
-
-PROMPT_CONSULTA = """Eres el agente de atención al cliente de Telco Andina. Ya clasificaste el caso:
-
-{resumen}
-
-Decide qué necesitas consultar antes de resolver. Usa las herramientas disponibles:
-- Información pública (planes, tarifas, tiendas, horarios, políticas): consultar_base_conocimiento_publica.
-- Casos parecidos ya resueltos: consultar_casos_resueltos con la categoría del caso.
-- Reglas de la empresa antes de escalar: consultar_politicas_institucionales con tipo 'vip',
-  'falla-masiva' o 'palabras-clave'.
-{obligatorio}
-No repitas una consulta que ya hiciste. Cuando tengas lo necesario, responde en texto plano con un
-resumen de una línea de lo que encontraste."""
-
-# Cuando el mensaje trae amenaza de cancelación, la política institucional deja de
-# ser opcional: define el área destino y el nivel mínimo de escalamiento.
-CONSULTA_OBLIGATORIA_CHURN = (
-    "\nEste caso tiene amenaza de cancelación. Antes de decidir, llama\n"
-    "consultar_politicas_institucionales con tipo 'vip': esa política fija el nivel mínimo de\n"
-    "escalamiento y la asignación a retención.\n"
-)
 
 PROMPT_DECISION = """Eres el agente de atención al cliente de Telco Andina. Decide el tratamiento del caso.
 
@@ -230,7 +205,7 @@ def _uno_de(valor, permitidos: tuple, por_defecto: str) -> str:
 
 
 # Traza para la persona que mira el CLI. El modelo nunca las ve.
-ANOTACIONES = ("[análisis]", "[auditoría]")
+ANOTACIONES = ("[análisis]", "[auditoría]", "[razonamiento]")
 
 
 def _conversacion(messages: list) -> list:
@@ -318,6 +293,9 @@ def _resumen_del_caso(state: AgentState) -> str:
 
     if state.get("perfil_cliente"):
         base += f"\n- Perfil histórico del cliente: {state['perfil_cliente']}"
+
+    if state.get("razonamiento"):
+        base += f"\n- Último Thought (ReAct): {state['razonamiento']}"
 
     return base
 
@@ -527,6 +505,8 @@ def build_graph(tools: list | None = None, checkpointer=None, store=None):
             "categoria": _uno_de(datos.get("categoria"), CATEGORIAS, "otro"),
             "categoria_secundaria": secundaria or None,
             "requiere_datos_privados": bool(datos.get("requiere_datos_privados")),
+            "iteracion": 0,
+            "max_iteraciones": max_iterations,
             "messages": [
                 AIMessage(
                     content=(
@@ -539,30 +519,6 @@ def build_graph(tools: list | None = None, checkpointer=None, store=None):
                 )
             ],
         }
-
-    def consulta(state: AgentState):
-        """El modelo decide qué consultar. Aquí solo ve las herramientas de lectura."""
-        iteracion = state.get("iteracion", 0) + 1
-        max_iteraciones = state.get("max_iteraciones") or MAX_ITERACIONES
-
-        instrucciones = PROMPT_CONSULTA.format(
-            resumen=_resumen_del_caso(state),
-            obligatorio=CONSULTA_OBLIGATORIA_CHURN if state.get("riesgo_churn") else "",
-        )
-        mensajes = [SystemMessage(content=instrucciones), *_conversacion(state["messages"])]
-
-        if iteracion >= max_iteraciones:
-            # Sin herramientas vinculadas la única salida es seguir a la decisión.
-            respuesta = modelo_base.invoke(
-                mensajes
-                + [SystemMessage(content="Ya no puedes consultar más. Resume en una línea lo que tienes.")]
-            )
-        else:
-            respuesta = modelo_con_tools.invoke(mensajes)
-            _rescatar_tool_calls_de_texto(respuesta)
-            _reparar_tool_calls(respuesta)
-
-        return {"messages": [respuesta], "iteracion": iteracion}
 
     def decision(state: AgentState):
         """Resuelve o escala. Cuando la decisión choca con el estado, gana el estado."""
@@ -723,19 +679,17 @@ def build_graph(tools: list | None = None, checkpointer=None, store=None):
 
         return salida
 
-    def hay_consultas_pendientes(state: AgentState):
-        """Arista condicional: ejecutar herramientas o pasar a decidir."""
-        if getattr(state["messages"][-1], "tool_calls", None):
-            return "tool_node"
-        return "decision"
+    reason, act, hay_accion_pendiente = build_react_nodes(
+        modelo_base, modelo_con_tools, tools_consulta
+    )
 
     agent_builder = StateGraph(AgentState)
 
     agent_builder.add_node("recepcion", recepcion)
     agent_builder.add_node("compresion_contexto", compresion_contexto)
     agent_builder.add_node("analisis", analisis)
-    agent_builder.add_node("consulta", consulta)
-    agent_builder.add_node("tool_node", ToolNode(tools_consulta))
+    agent_builder.add_node("reason", reason)
+    agent_builder.add_node("act", act)
     agent_builder.add_node("decision", decision)
     agent_builder.add_node("acciones", acciones)
     agent_builder.add_node("respuesta", respuesta)
@@ -743,9 +697,11 @@ def build_graph(tools: list | None = None, checkpointer=None, store=None):
     agent_builder.add_edge(START, "recepcion")
     agent_builder.add_conditional_edges("recepcion", debe_comprimir, ["compresion_contexto", "analisis"])
     agent_builder.add_edge("compresion_contexto", "analisis")
-    agent_builder.add_edge("analisis", "consulta")
-    agent_builder.add_conditional_edges("consulta", hay_consultas_pendientes, ["tool_node", "decision"])
-    agent_builder.add_edge("tool_node", "consulta")
+    agent_builder.add_edge("analisis", "reason")
+    agent_builder.add_conditional_edges(
+        "reason", hay_accion_pendiente, {"act": "act", "continuar": "decision"}
+    )
+    agent_builder.add_edge("act", "reason")
     agent_builder.add_edge("decision", "acciones")
     agent_builder.add_edge("acciones", "respuesta")
     agent_builder.add_edge("respuesta", END)
