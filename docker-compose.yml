@@ -1,13 +1,37 @@
 services:
+  # API empresarial del curso: los sistemas internos de Telco Andina que el
+  # agente consulta y contra los que registra contactos, tickets y telemetría.
+  api:
+    image: julianmora27/misw4412-api-empresarial:2026-20
+    container_name: telco-api
+    ports:
+      # Publicado en el host para poder verificarla con
+      # `curl localhost:8080/health` sin entrar al contenedor.
+      - "8080:8080"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
   agente:
     image: estebancardenas/telco:2026-20
     container_name: telco-agente
+    # El agente consulta la API desde el primer nodo del grafo, así que espera
+    # a que responda el healthcheck en vez de arrancar contra un puerto muerto.
+    depends_on:
+      api:
+        condition: service_healthy
     stdin_open: true
     tty: true
     environment:
       - OLLAMA_MODEL=qwen2.5:14b
       - OLLAMA_BASE_URL=http://host.docker.internal:11434
-      - API_BASE_URL=http://host.docker.internal:8080
+      # `api` es el nombre del servicio: Docker lo resuelve dentro de la red
+      # del compose, sin pasar por el host.
+      - API_BASE_URL=http://api:8080
       - CASO_NEGOCIO=telecom
       - GRUPO=25
       - RAG_BASE_URL=http://34.71.149.196:8000/api/v1
@@ -27,6 +51,7 @@ services:
       # volumen, `docker compose run --rm` borra el contenedor y con él los .sqlite.
       - agente-data:/app/data
     extra_hosts:
+      # Solo para Ollama, que corre como servicio del host.
       - "host.docker.internal:host-gateway"
 
 volumes:
