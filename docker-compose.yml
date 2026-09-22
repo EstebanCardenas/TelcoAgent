@@ -20,6 +20,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.agente2
+    image: estebancardenas/telco-agente2:2026-20
     container_name: telco-agente2
     ports:
       - "8090:8090"
