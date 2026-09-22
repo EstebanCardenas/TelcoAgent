@@ -39,6 +39,24 @@ def listar_topes(conexion: sqlite3.Connection, segmento: str) -> list[dict]:
     return [dict(fila) for fila in filas]
 
 
+def listar_catalogo(
+    conexion: sqlite3.Connection, segmento: str, motivo: str
+) -> list[dict]:
+    """Ofertas activas del segmento y motivo, sin aplicar tope todavía."""
+    filas = conexion.execute(
+        """
+        SELECT oferta_id, tipo, valor, meses, segmento_aplicable, motivo_aplicable
+        FROM ofertas
+        WHERE activa = 1
+          AND segmento_aplicable IN (?, 'todos')
+          AND motivo_aplicable IN (?, 'todos')
+        ORDER BY valor DESC, meses DESC
+        """,
+        (segmento, motivo),
+    ).fetchall()
+    return [dict(fila) for fila in filas]
+
+
 def listar_candidatas(
     conexion: sqlite3.Connection,
     segmento: str,

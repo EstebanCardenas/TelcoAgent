@@ -26,8 +26,8 @@ def obtener(tarea_id: str) -> RespuestaTarea | None:
 def aceptar_o_rechazar(cuerpo: dict) -> RespuestaTarea:
     """Valida el expediente y deja la tarea en submitted o rejected.
 
-    El plan comercial (Fase 3) aún no corre. Una petición válida queda
-    en `submitted` para que el Agente 1 confirme recepción.
+    El plan comercial arranca después, desde el servidor HTTP, si la petición
+    fue aceptada.
     """
     peticion, rechazo = parsear_peticion(cuerpo)
     if rechazo is not None:
