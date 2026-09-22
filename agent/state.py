@@ -55,6 +55,15 @@ class AgentState(TypedDict, total=False):
     # Resultado de las acciones sobre el negocio
     telemetria_id: str | None
     ticket_id: str | None
+    ticket_n2_id: str | None
+
+    # A2A con el Asesor de Retención
+    segmento: str
+    tarea_id: str
+    compromiso_retencion: str
+    oferta_retencion: str | None
+    deriva_n2: bool
+    estado_tarea_a2a: str
 
     # ReAct (semana 5): último Thought y red de seguridad del ciclo reason ⇄ act
     razonamiento: str

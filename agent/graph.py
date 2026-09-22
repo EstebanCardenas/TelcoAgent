@@ -49,6 +49,7 @@ from agent.memory.store import (
     perfil_a_texto,
 )
 from agent.reasoning.react import build_react_nodes, max_iterations
+from agent.a2a_cliente import bloque_compromiso, procesar_retencion
 from agent.tools import cliente_existe, get_local_tools, obtener_contacto
 from agent.state import AgentState
 from cli.config import get_settings
@@ -108,8 +109,11 @@ Constancia de auditoría: {constancia}
 Lo consultado:
 {hallazgos}
 {advertencias}
+{compromiso_retencion}
 Escribe primero la respuesta para el cliente, en el tono adecuado a su estado emocional, con un
-compromiso concreto y sin prometer nada que la política no autorice. Después el expediente con
+compromiso concreto y sin prometer nada que la política no autorice. Si hay un compromiso de
+retención autorizado, cítalo tal cual: no cambies el porcentaje ni los meses. Si el bloque dice
+que no hay compromiso autorizado, no inventes cifras. Después el expediente con
 estas siete secciones, cada una con su título:
 
 1. Información general de la interacción
@@ -643,6 +647,30 @@ def build_graph(tools: list | None = None, checkpointer=None, store=None):
             else:
                 constancias.append("el ticket no pudo crearse")
 
+        ticket_id = salida.get("ticket_id") or state.get("ticket_id") or ""
+        if ticket_id:
+            retencion = procesar_retencion({**state, **salida}, ticket_id)
+            salida.update(retencion)
+            if retencion.get("compromiso_retencion"):
+                constancias.append("compromiso de retención autorizado")
+            elif retencion.get("estado_tarea_a2a"):
+                constancias.append(f"retención {retencion['estado_tarea_a2a']}, sin cifra")
+            if retencion.get("deriva_n2") and ticket is not None:
+                crudo_n2 = await ticket.ainvoke(
+                    {
+                        "contacto_id": contacto_id,
+                        "cliente_id": state.get("cliente_id"),
+                        "categoria": state.get("categoria", "otro"),
+                        "prioridad": state.get("prioridad", "alta"),
+                        "area_destino": "soporte_tecnico_n2",
+                        "resumen": "Falla de planta derivada por retención.",
+                    }
+                )
+                datos_n2 = _json_de(_texto_del_resultado(crudo_n2))
+                if datos_n2.get("id"):
+                    salida["ticket_n2_id"] = datos_n2["id"]
+                    constancias.append(f"ticket {datos_n2['id']} a soporte_tecnico_n2")
+
         resumen = " · ".join(constancias) if constancias else "sin acciones que registrar"
         salida["messages"] = [AIMessage(content=f"[auditoría] {resumen}")]
         return salida
@@ -655,6 +683,7 @@ def build_graph(tools: list | None = None, checkpointer=None, store=None):
                 [
                     f"telemetría {state['telemetria_id']}" if state.get("telemetria_id") else "",
                     f"ticket {state['ticket_id']}" if state.get("ticket_id") else "",
+                    f"ticket N2 {state['ticket_n2_id']}" if state.get("ticket_n2_id") else "",
                 ],
             )
         )
@@ -668,6 +697,7 @@ def build_graph(tools: list | None = None, checkpointer=None, store=None):
             justificacion=state.get("justificacion", ""),
             constancia=constancia or "sin constancia registrada",
             hallazgos=exitos,
+            compromiso_retencion=bloque_compromiso(state),
         )
         salida = {"messages": [modelo_base.invoke([HumanMessage(content=prompt)])]}
 
