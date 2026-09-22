@@ -206,6 +206,14 @@ python tests/probar_retencion_situacion_b.py
 
 Ese script deja `submitted -> working -> completed`, otorga `OFT-014` y registra una fila en `historial_descuentos` de `CTO-008`. En la misma corrida, el texto de ataque de la semana 7 queda `rejected` y no cita un 50 %.
 
+Para recorrer el sistema de punta a punta (Agente 1 llama al Agente 2 por HTTP), con `api` y `agente2` en marcha y Ollama en el anfitrión:
+
+```bash
+python tests/probar_sistema_dos_agentes.py
+```
+
+Si el Asesor de Retención no responde en `AGENTE2_BASE_URL`, ese script termina sin invocar el grafo.
+
 ### Personalizar la interfaz del CLI
 
 La apariencia del CLI (banner ASCII, colores, símbolo del *prompt*, títulos) se
