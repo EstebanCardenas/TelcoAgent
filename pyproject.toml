@@ -11,9 +11,23 @@ dynamic = ["dependencies"]
 
 [project.scripts]
 agente = "cli.main:cli"
+agente2 = "agente2.app:main"
 
 [tool.setuptools]
-packages = ["cli", "agent", "agent.memory", "agent.reasoning", "mcp_server", "observability"]
+packages = [
+    "cli",
+    "agent",
+    "agent.memory",
+    "agent.reasoning",
+    "mcp_server",
+    "observability",
+    "agente2",
+    "agente2.db",
+    "agente2.a2a",
+]
+
+[tool.setuptools.package-data]
+"agente2.db" = ["*.sql"]
 
 [tool.setuptools.dynamic]
 dependencies = { file = ["requirements.txt"] }

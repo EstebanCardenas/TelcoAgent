@@ -16,6 +16,35 @@ services:
       retries: 5
       start_period: 10s
 
+  agente2:
+    build:
+      context: .
+      dockerfile: Dockerfile.agente2
+    container_name: telco-agente2
+    ports:
+      - "8090:8090"
+    environment:
+      - AGENTE2_HOST=0.0.0.0
+      - AGENTE2_PORT=8090
+      - AGENTE2_DB_PATH=/app/data/retencion.sqlite
+      - API_BASE_URL=http://api:8080
+      - OLLAMA_MODEL=qwen2.5:14b
+      - OLLAMA_BASE_URL=http://host.docker.internal:11434
+    volumes:
+      - agente2-data:/app/data
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8090/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    restart: unless-stopped
+
   agente:
     image: estebancardenas/telco:2026-20
     container_name: telco-agente
@@ -23,6 +52,8 @@ services:
     # a que responda el healthcheck en vez de arrancar contra un puerto muerto.
     depends_on:
       api:
+        condition: service_healthy
+      agente2:
         condition: service_healthy
     stdin_open: true
     tty: true
@@ -32,6 +63,7 @@ services:
       # `api` es el nombre del servicio: Docker lo resuelve dentro de la red
       # del compose, sin pasar por el host.
       - API_BASE_URL=http://api:8080
+      - AGENTE2_BASE_URL=http://agente2:8090
       - CASO_NEGOCIO=telecom
       - GRUPO=25
       - RAG_BASE_URL=http://34.71.149.196:8000/api/v1
@@ -56,3 +88,4 @@ services:
 
 volumes:
   agente-data:
+  agente2-data:

@@ -37,6 +37,8 @@ class Settings:
     rag_email: str
     rag_password: str
     rag_collection: str
+    # URL del Asesor de Retención (Agente 2). El Agente 1 la usa en A2A.
+    agente2_base_url: str
 
 
 @lru_cache
@@ -54,4 +56,5 @@ def get_settings() -> Settings:
         rag_email=os.getenv("RAG_EMAIL", ""),
         rag_password=os.getenv("RAG_PASSWORD", ""),
         rag_collection=os.getenv("RAG_COLLECTION", ""),
+        agente2_base_url=os.getenv("AGENTE2_BASE_URL", "http://localhost:8090"),
     )
