@@ -5,6 +5,10 @@ from agente2.contrato import (
     parsear_peticion,
     rechazo_fuera_de_retencion,
 )
+from agente2.seguridad.esquema import (
+    entrada_no_confiable,
+    rechazo_entrada_no_confiable,
+)
 
 _TAREAS: dict[str, RespuestaTarea] = {}
 
@@ -36,6 +40,9 @@ def aceptar_o_rechazar(cuerpo: dict) -> RespuestaTarea:
     assert peticion is not None
     if not peticion.riesgo_churn or peticion.area_destino != "retencion":
         return registrar(rechazo_fuera_de_retencion(peticion))
+
+    if entrada_no_confiable(peticion.motivo, peticion.resumen):
+        return registrar(rechazo_entrada_no_confiable(peticion))
 
     return registrar(
         RespuestaTarea(tarea_id=peticion.tarea_id, estado="submitted")

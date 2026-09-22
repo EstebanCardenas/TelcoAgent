@@ -57,6 +57,7 @@ def _correr(tmp_path, cuerpo: dict, modelo: ModeloFijo, ticket=None):
         modelo=modelo,
         consultar_ticket=ticket or _ticket_ok,
         db_path=str(ruta),
+        clasificador=lambda _texto: False,
     ), ruta
 
 
@@ -65,6 +66,7 @@ def test_el_grafo_compila_con_nodos_de_plan():
         modelo=ModeloFijo("OFT-014"),
         consultar_ticket=_ticket_ok,
         db_path=":memory:",
+        clasificador=lambda _texto: False,
     )
     nodos = nombres_de_nodos(grafo)
     assert "planificar" in nodos
@@ -131,6 +133,7 @@ def test_conjunto_vacio_no_entrega_cifras(tmp_path):
         modelo=modelo,
         consultar_ticket=_ticket_ok,
         db_path=str(ruta),
+        clasificador=lambda _texto: False,
     )
 
     assert resultado.oferta_id is None
