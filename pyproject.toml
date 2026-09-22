@@ -24,6 +24,7 @@ packages = [
     "agente2",
     "agente2.db",
     "agente2.a2a",
+    "agente2.razonamiento",
 ]
 
 [tool.setuptools.package-data]

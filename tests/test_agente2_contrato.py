@@ -28,6 +28,7 @@ SITUACION_B = {
 @pytest.fixture
 def cliente(tmp_path, monkeypatch):
     monkeypatch.setenv("AGENTE2_DB_PATH", str(tmp_path / "retencion.sqlite"))
+    monkeypatch.setenv("AGENTE2_EJECUTAR_PLAN", "0")
     get_settings.cache_clear()
     tareas.reiniciar()
     from agente2.app import app

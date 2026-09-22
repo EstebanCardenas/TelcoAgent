@@ -2,8 +2,11 @@
 
 Starlette ya viene con `mcp`. No se añade FastAPI a las dependencias fijadas
 del curso. El proceso escucha `/health`, el contrato A2A y lecturas del catálogo.
+Tras `submitted`, el plan corre en un hilo y deja `working` o el artefacto final.
 """
 
+import os
+import threading
 from contextlib import asynccontextmanager
 
 from starlette.applications import Starlette
@@ -13,8 +16,24 @@ from starlette.routing import Route
 
 from agente2.a2a import tareas
 from agente2.config import get_settings
+from agente2.contrato import RespuestaTarea, parsear_peticion
 from agente2.db.conexion import conectar, inicializar_bd
 from agente2.db.repositorio import listar_topes, obtener_oferta
+
+
+def _plan_habilitado() -> bool:
+    return os.getenv("AGENTE2_EJECUTAR_PLAN", "1") != "0"
+
+
+def _correr_en_fondo(peticion) -> None:
+    from agente2.razonamiento.plan_execute import correr_plan
+
+    tareas.registrar(RespuestaTarea(tarea_id=peticion.tarea_id, estado="working"))
+    try:
+        resultado = correr_plan(peticion)
+    except Exception:
+        resultado = RespuestaTarea(tarea_id=peticion.tarea_id, estado="failed")
+    tareas.registrar(resultado)
 
 
 @asynccontextmanager
@@ -39,6 +58,11 @@ async def crear_tarea(request: Request) -> JSONResponse:
     if not isinstance(cuerpo, dict):
         cuerpo = {}
     respuesta = tareas.aceptar_o_rechazar(cuerpo)
+    if respuesta.estado == "submitted" and _plan_habilitado():
+        peticion, _rechazo = parsear_peticion(cuerpo)
+        if peticion is not None:
+            hilo = threading.Thread(target=_correr_en_fondo, args=(peticion,), daemon=True)
+            hilo.start()
     return _json(respuesta)
 
 
