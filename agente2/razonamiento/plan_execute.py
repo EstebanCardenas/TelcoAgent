@@ -27,6 +27,7 @@ from agente2.seguridad.esquema import (
 )
 from agente2.ticket import consultar_ticket as consultar_ticket_api
 from agente2.ticket import ticket_es_valido
+from observability.tracing import trazable
 
 # Identificador que las pruebas buscan por AST. No puede vivir solo en un comentario.
 max_pasos = 12
@@ -416,6 +417,7 @@ def build_grafo(
     return constructor.compile()
 
 
+@trazable(name="asesor-retencion")
 def correr_plan(
     peticion,
     *,
@@ -430,7 +432,13 @@ def correr_plan(
         db_path=db_path,
         clasificador=clasificador,
     )
-    final = grafo.invoke({"expediente": peticion.model_dump()})
+    final = grafo.invoke(
+        {"expediente": peticion.model_dump()},
+        config={
+            "run_name": "asesor-retencion",
+            "tags": ["agente2", "plan-and-execute", "asesor-retencion"],
+        },
+    )
     resultado = respuesta_de_estado(final)
     if artefacto_mal_formado(resultado):
         return RespuestaTarea(
