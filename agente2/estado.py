@@ -19,3 +19,4 @@ class EstadoPlan(TypedDict, total=False):
     justificacion: str
     estado: str
     motivo_rechazo: str
+    marca_dato: str
