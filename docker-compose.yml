@@ -30,6 +30,9 @@ services:
       - API_BASE_URL=http://api:8080
       - OLLAMA_MODEL=qwen2.5:14b
       - OLLAMA_BASE_URL=http://host.docker.internal:11434
+      - LANGCHAIN_TRACING_V2=${LANGCHAIN_TRACING_V2:-false}
+      - LANGCHAIN_API_KEY=${LANGCHAIN_API_KEY:-}
+      - LANGCHAIN_PROJECT=${LANGCHAIN_PROJECT:-misw4412-grupo25}
     volumes:
       - agente2-data:/app/data
     extra_hosts:
@@ -46,6 +49,9 @@ services:
     restart: unless-stopped
 
   agente:
+    build:
+      context: .
+      dockerfile: Dockerfile
     image: estebancardenas/telco:2026-20
     container_name: telco-agente
     # El agente consulta la API desde el primer nodo del grafo, así que espera

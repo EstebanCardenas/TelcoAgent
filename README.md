@@ -31,6 +31,7 @@ completan una pieza y las pruebas de esa semana pasan de rojo a verde.
 - [3. Desplegar el API empresarial en un puerto](#3-desplegar-el-api-empresarial-en-un-puerto)
 - [4. Usar el CLI](#4-usar-el-cli)
   - [Ejecutar con Docker Compose](#ejecutar-con-docker-compose)
+  - [Asesor de Retención (Agente 2)](#asesor-de-retención-agente-2)
   - [Personalizar la interfaz del CLI](#personalizar-la-interfaz-del-cli)
 - [5. Estructura del proyecto](#5-estructura-del-proyecto)
 - [6. Arquitectura propuesta](#6-arquitectura-propuesta)
@@ -152,10 +153,13 @@ elegancia mientras el agente crece.
 
 ### Ejecutar con Docker Compose
 
-Si prefiere ejecutar el agente dentro de un contenedor Docker (utilizando la imagen `estebancardenas/telco:2026-20`), use el archivo `docker-compose.yml` incluido:
+Si prefiere ejecutar el agente dentro de un contenedor Docker, use el archivo `docker-compose.yml` incluido. Ese archivo levanta tres servicios: la API empresarial (`api`, puerto 8080), el Asesor de Retención (`agente2`, puerto 8090) y el Agente 1 (`agente`).
 
 ```bash
-# Iniciar el chat interactivo en la terminal
+# API y Asesor de Retención en segundo plano
+docker compose up -d api agente2
+
+# Chat interactivo del Agente 1 (espera a que api y agente2 respondan salud)
 docker compose run --rm agente
 ```
 
@@ -171,7 +175,36 @@ docker compose run --rm agente herramientas      # listar tools disponibles
 docker compose run --rm agente version           # ver versión
 ```
 
-> **Prerrequisitos:** Asegúrese de tener corriendo **Ollama** en su máquina (`ollama serve` con el modelo `qwen2.5:14b`) y el **API empresarial** desplegada en el puerto `8080` (`docker compose up -d` en el repositorio de la API).
+> **Prerrequisitos:** Ollama en la máquina anfitriona (`ollama serve` con el modelo `qwen2.5:14b`). La API empresarial ya sale de este `docker-compose.yml`; no hace falta un compose aparte para la demo local.
+
+### Asesor de Retención (Agente 2)
+
+El Agente 2 es un proceso HTTP propio. El Agente 1 no importa su grafo: lo llama por A2A.
+
+| Qué | Valor |
+| :--- | :--- |
+| Puerto | `8090` |
+| Variable del Agente 1 | `AGENTE2_BASE_URL` |
+| En el host | `http://localhost:8090` |
+| Entre contenedores | `http://agente2:8090` |
+| Base SQLite | volumen `agente2-data` (`/app/data/retencion.sqlite`) |
+| Traza LangSmith | mismo `LANGCHAIN_PROJECT`; `run_name=asesor-retencion` |
+
+```bash
+curl http://localhost:8090/health
+```
+
+Respuesta esperada: `{"estado": "ok", "servicio": "asesor-retencion"}`.
+
+La URL se lee de la configuración (`get_settings().agente2_base_url`). No se escribe a mano en el grafo. En `.env` local use `AGENTE2_BASE_URL=http://localhost:8090`. Compose ya inyecta `http://agente2:8090` en el servicio `agente`.
+
+Para imprimir petición y respuesta de Situación B (sin Ollama), desde `main/`:
+
+```bash
+python tests/probar_retencion_situacion_b.py
+```
+
+Ese script deja `submitted -> working -> completed`, otorga `OFT-014` y registra una fila en `historial_descuentos` de `CTO-008`. En la misma corrida, el texto de ataque de la semana 7 queda `rejected` y no cita un 50 %.
 
 ### Personalizar la interfaz del CLI
 
@@ -210,11 +243,17 @@ Todos los campos son opcionales; si se omiten se usan valores por defecto.
 │   ├── graph.py         ·   [SEMANA 2] construir y compilar el grafo
 │   ├── tools.py         ·   [SEMANA 2] herramientas locales del agente
 │   ├── mcp_client.py    ·   [SEMANA 2] cliente que carga las tools del servidor MCP
+│   ├── a2a_cliente.py   ·   [SEMANA 7] llama al Asesor de Retención por HTTP
 │   ├── memory/          ·   [SEMANA 4] memoria de corto y largo plazo
 │   │   ├── checkpointer.py ·  corto plazo: SqliteSaver por `thread_id`
 │   │   └── store.py     ·   largo plazo: SqliteStore con el perfil del cliente
 │   └── reasoning/       ·   [SEMANA 5] descomposición de tareas (ReAct / Plan-Execute)
 │       └── react.py
+├── agente2/             ← Asesor de Retención (proceso HTTP en el puerto 8090)
+│   ├── app.py           ·   /health, /tareas, /ofertas, /topes
+│   ├── db/              ·   SQLite propia: catálogo, topes e historial
+│   ├── razonamiento/    ·   grafo Plan-and-Execute
+│   └── seguridad/       ·   detector de firmas y clasificador de inyección
 ├── mcp_server/          ← su servidor MCP de acciones
 │   └── server.py        ·   [SEMANA 2] arranca con una tool de ejemplo (`ping`)
 ├── observability/       ← utilidades de trazado con LangSmith
