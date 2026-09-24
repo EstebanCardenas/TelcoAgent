@@ -5,7 +5,8 @@ El grafo sigue el diagrama de la semana 1 y respeta sus tres tipos de caja:
   Pasos deterministas (cajas técnicas del diagrama)
       `recepcion`  obtiene el contacto real del punto de integración.
       `act`        ejecuta la Action (herramienta de consulta) que pidió `reason`.
-      `acciones`   registra la telemetría y crea el ticket.
+      `acciones`   registra la telemetría, crea el ticket y, si aplica,
+                   consulta retención en una traza propia.
 
   Pasos de razonamiento (cajas moradas del diagrama)
       `analisis`   lee tono, urgencia, riesgo de cancelación y categoría.
@@ -53,6 +54,7 @@ from agent.a2a_cliente import bloque_compromiso, procesar_retencion
 from agent.tools import cliente_existe, get_local_tools, obtener_contacto
 from agent.state import AgentState
 from cli.config import get_settings
+from observability.tracing import cerrar_traza, traza
 
 
 # Herramientas que ESCRIBEN en el negocio. Viven en el servidor MCP y las invocan
@@ -335,6 +337,33 @@ def _consultas(messages: list) -> tuple[str, str]:
     return texto_exitos, texto_fallas
 
 
+def _resumen_retencion(
+    retencion: dict, ticket_n2_id: str | None, motivo_omision: str | None
+) -> str:
+    """Una frase para la salida de la traza `procesar-retencion`."""
+    estado = retencion.get("estado_tarea_a2a")
+    if not estado:
+        if motivo_omision:
+            return f"No se consultó retención: {motivo_omision}."
+        return "No se consultó retención."
+    tarea = retencion.get("tarea_id") or "sin tarea"
+    if estado == "completed" and retencion.get("compromiso_retencion"):
+        texto = (
+            f"{tarea}: estado completed. Compromiso autorizado "
+            f"({retencion.get('oferta_retencion')})."
+        )
+    elif estado == "rejected":
+        texto = f"{tarea}: estado rejected. Sin cifra para el cliente."
+    else:
+        texto = f"{tarea}: estado {estado}. Sin cifra para el cliente."
+    if retencion.get("deriva_n2"):
+        if ticket_n2_id:
+            texto += f" Ticket {ticket_n2_id} a soporte_tecnico_n2."
+        else:
+            texto += " Deriva a soporte_tecnico_n2 sin ticket."
+    return texto
+
+
 def build_graph(tools: list | None = None, checkpointer=None, store=None):
     """Compila y devuelve el grafo del agente, listo para invocar.
 
@@ -582,7 +611,8 @@ def build_graph(tools: list | None = None, checkpointer=None, store=None):
         """Registra la auditoría y, si escala, crea el ticket, ambos por MCP.
 
         Escribe con los valores del estado, así que la telemetría no puede
-        contradecir la respuesta que se le entrega al cliente.
+        contradecir la respuesta que se le entrega al cliente. Si hay ticket,
+        la retención corre dentro de la traza `procesar-retencion`.
         """
         contacto_id = state.get("contacto_id") or ""
         if not contacto_id:
@@ -649,27 +679,88 @@ def build_graph(tools: list | None = None, checkpointer=None, store=None):
 
         ticket_id = salida.get("ticket_id") or state.get("ticket_id") or ""
         if ticket_id:
-            retencion = procesar_retencion({**state, **salida}, ticket_id)
-            salida.update(retencion)
-            if retencion.get("compromiso_retencion"):
-                constancias.append("compromiso de retención autorizado")
-            elif retencion.get("estado_tarea_a2a"):
-                constancias.append(f"retención {retencion['estado_tarea_a2a']}, sin cifra")
-            if retencion.get("deriva_n2") and ticket is not None:
-                crudo_n2 = await ticket.ainvoke(
-                    {
-                        "contacto_id": contacto_id,
-                        "cliente_id": state.get("cliente_id"),
-                        "categoria": state.get("categoria", "otro"),
-                        "prioridad": state.get("prioridad", "alta"),
-                        "area_destino": "soporte_tecnico_n2",
-                        "resumen": "Falla de planta derivada por retención.",
-                    }
-                )
-                datos_n2 = _json_de(_texto_del_resultado(crudo_n2))
-                if datos_n2.get("id"):
-                    salida["ticket_n2_id"] = datos_n2["id"]
-                    constancias.append(f"ticket {datos_n2['id']} a soporte_tecnico_n2")
+            async with traza(
+                "procesar-retencion",
+                inputs={
+                    "ticket_id": ticket_id,
+                    "decision": state.get("decision"),
+                    "area_destino": state.get("area_destino"),
+                    "riesgo_churn": bool(state.get("riesgo_churn")),
+                    "categoria": state.get("categoria"),
+                    "prioridad": state.get("prioridad"),
+                    "contacto_id": contacto_id,
+                    "cliente_id": state.get("cliente_id"),
+                },
+                tags=["retencion", "a2a", "agente1"],
+                metadata={"paso": "retencion", "ticket_id": ticket_id},
+            ) as run_retencion:
+                retencion = procesar_retencion({**state, **salida}, ticket_id)
+                salida.update(retencion)
+                if retencion.get("compromiso_retencion"):
+                    constancias.append("compromiso de retención autorizado")
+                elif retencion.get("estado_tarea_a2a"):
+                    constancias.append(
+                        f"retención {retencion['estado_tarea_a2a']}, sin cifra"
+                    )
+                if retencion.get("deriva_n2") and ticket is not None:
+                    crudo_n2 = await ticket.ainvoke(
+                        {
+                            "contacto_id": contacto_id,
+                            "cliente_id": state.get("cliente_id"),
+                            "categoria": state.get("categoria", "otro"),
+                            "prioridad": state.get("prioridad", "alta"),
+                            "area_destino": "soporte_tecnico_n2",
+                            "resumen": "Falla de planta derivada por retención.",
+                        }
+                    )
+                    datos_n2 = _json_de(_texto_del_resultado(crudo_n2))
+                    if datos_n2.get("id"):
+                        salida["ticket_n2_id"] = datos_n2["id"]
+                        constancias.append(
+                            f"ticket {datos_n2['id']} a soporte_tecnico_n2"
+                        )
+                if run_retencion is not None:
+                    if retencion.get("deriva_n2"):
+                        run_retencion.add_tags(["deriva-n2"])
+                        if salida.get("ticket_n2_id"):
+                            run_retencion.add_event(
+                                f"Ticket {salida['ticket_n2_id']} a soporte_tecnico_n2."
+                            )
+                        else:
+                            run_retencion.add_event(
+                                "Deriva a soporte_tecnico_n2 sin ticket."
+                            )
+                    padre = getattr(run_retencion, "parent_run", None)
+                    if padre is not None and hasattr(padre, "add_tags"):
+                        padre.add_tags(["retencion"])
+                        if hasattr(padre, "add_metadata"):
+                            padre.add_metadata(
+                                {
+                                    "retencion_estado": retencion.get("estado_tarea_a2a")
+                                    or "omitida",
+                                    "retencion_tarea_id": retencion.get("tarea_id"),
+                                    "retencion_oferta": retencion.get("oferta_retencion"),
+                                }
+                            )
+                    motivo = (run_retencion.metadata or {}).get("motivo_omision")
+                    cerrar_traza(
+                        run_retencion,
+                        {
+                            "resumen": _resumen_retencion(
+                                retencion, salida.get("ticket_n2_id"), motivo
+                            ),
+                            "aplica": bool(retencion.get("estado_tarea_a2a")),
+                            "tarea_id": retencion.get("tarea_id"),
+                            "estado_tarea_a2a": retencion.get("estado_tarea_a2a"),
+                            "segmento": retencion.get("segmento"),
+                            "oferta_retencion": retencion.get("oferta_retencion"),
+                            "compromiso_retencion": retencion.get("compromiso_retencion")
+                            or "",
+                            "deriva_n2": bool(retencion.get("deriva_n2")),
+                            "ticket_n2_id": salida.get("ticket_n2_id"),
+                            "motivo_omision": motivo,
+                        },
+                    )
 
         resumen = " · ".join(constancias) if constancias else "sin acciones que registrar"
         salida["messages"] = [AIMessage(content=f"[auditoría] {resumen}")]
