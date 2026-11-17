@@ -74,7 +74,8 @@ services:
       - CASO_NEGOCIO=telecom
       - GRUPO=25
       - RAG_BASE_URL=http://34.71.149.196:8000/api/v1
-      - RAG_EMAIL=grupo25_telecom@uniandes.edu.co
+      # Credenciales del RAG: se toman del .env local, que no se versiona.
+      - RAG_EMAIL=${RAG_EMAIL:-}
       - RAG_PASSWORD=${RAG_PASSWORD:-}
       - RAG_COLLECTION=telecom
       # Observabilidad (semana 3). Los valores se toman del .env local, que no

@@ -119,7 +119,7 @@ la configuración (`get_settings().api_base_url`).
 >
 > ```dotenv
 > RAG_BASE_URL=http://34.71.149.196:8000/api/v1
-> RAG_EMAIL=grupo25_telecom@uniandes.edu.co
+> RAG_EMAIL=<correo de su grupo>
 > RAG_PASSWORD=<contraseña de su grupo>
 > RAG_COLLECTION=telecom
 > ```
